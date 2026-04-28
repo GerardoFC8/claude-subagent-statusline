@@ -1,11 +1,78 @@
 # claude-subagent-statusline
 
-A Claude Code plugin that tracks Task (sub-agent) delegations in real time and renders a live statusline showing your context window usage alongside running and completed delegation counts.
+A Claude Code plugin that tracks Task (sub-agent) delegations in real time, renders a live statusline showing your context window usage alongside running and completed delegation counts, and persists a searchable history of every delegation across sessions.
+
+## What's new in v0.2.0
+
+### Persistent delegation history
+
+Every Task delegation is now recorded to a global JSONL file with full prompt, metadata, outcome, and the sub-agent's response text (truncated at 16 KB). The file is capped at 500 entries (ring buffer) and survives session boundaries.
+
+Default location: `~/.claude/state/delegation-history.jsonl`
+Custom location: set `CLAUDE_PLUGIN_DATA=/your/dir` — the plugin writes to `$CLAUDE_PLUGIN_DATA/history.jsonl`.
+
+### `/subagents` slash command
+
+Invoke `/subagents` in any Claude Code conversation to inspect your delegation history:
+
+```
+/subagents           # table of last 20 delegations, newest first
+/subagents 50        # table of last 50 (cap at 100)
+/subagents stats     # per-type aggregates for this session
+/subagents #3        # full prompt + metrics for entry #3
+```
+
+Example table output:
+
+```
+| #  | When    | Type        | Description (≤40)                  | Status | Duration | Tokens      |
+|----|---------|-------------|-------------------------------------|--------|----------|-------------|
+| 1  | 2m ago  | sdd-spec    | Write spec for delegation history   | done   | 1m 12s   | 3/7         |
+| 2  | 5m ago  | sdd-design  | Lock contracts before tasks         | failed | —        | —           |
+| 3  | 11m ago | sdd-apply   | Implement history-lib.sh            | done   | 18s      | 3200/8400   |
+```
+
+### Enriched statusline format (BREAKING change)
+
+v0.2.0 changes the statusline output to include in-flight and failed segments.
+
+**Before (v0.1.0):**
+```
+[Opus 4.7] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done |
+```
+
+**After (v0.2.0) — example with one in-flight and one failed:**
+```
+[Opus 4.7] ████░░░░░░ 42% │ ▶ sdd-apply: "Implement history-lib" (1m 3s) │ ⚡ 2 running │ ✓ 7 done │ ✗ 1 failed
+```
+
+Changes:
+- `▶ <type>: "<desc>" (<elapsed>)` segment shows the longest-running in-flight delegation.
+- `⚠ ▶ ...` prefix when the in-flight entry has been running for more than 30 minutes (stale orphan indicator).
+- `✗ N failed` segment appended when at least one delegation failed. Absent when all delegations succeeded.
+- Trailing `|` removed from the done segment; `│` (U+2502) used consistently as separator.
+
+### Failure detection
+
+A new `PostToolUseFailure` hook fires when a Task sub-agent fails. The failed delegation is recorded in both the counter file (visible to the statusline) and the history file (visible to `/subagents`).
+
+### Environment variable fallback
+
+All history-writing scripts respect:
+
+```
+CLAUDE_PLUGIN_DATA=/custom/path  →  /custom/path/history.jsonl
+(unset)                          →  ~/.claude/state/delegation-history.jsonl
+```
+
+The counter file (for the statusline) remains at `~/.claude/state/delegations-<session_id>.jsonl` and is unaffected by `CLAUDE_PLUGIN_DATA`.
+
+---
 
 ## Preview
 
 ```
-[Opus 4.7] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done |
+[Opus 4.7] ████░░░░░░ 42% │ ▶ sdd-apply: "Implement history-lib" (1m 3s) │ ⚡ 2 running │ ✓ 7 done │ ✗ 1 failed
 ```
 
 The bar is 10 cells wide and color-coded: green below 50%, yellow 50–79%, red 80%+.
@@ -57,8 +124,14 @@ if [[ -n "$session_id" && -r "$state_file" ]]; then
   running=$(jq -rs '(map(select(.status=="done") | .id) | unique) as $d | (map(select(.status=="running") | .id) | unique) as $r | ($r - $d) | length' "$state_file" 2>/dev/null || echo 0)
 fi
 
-printf '%s │ ⚡ %d running | ✓ %d done |\n' "$existing_output" "$running" "$done_count"
+printf '%s │ ⚡ %d running │ ✓ %d done\n' "$existing_output" "$running" "$done_count"
 ```
+
+## Privacy note
+
+The history file stores the **full prompt** and the **sub-agent's response text** (truncated at 16 KB) of every Task delegation. If your prompts or sub-agent responses contain sensitive information, review the file before sharing or committing. The file is local to your machine and never sent anywhere by this plugin.
+
+To disable history recording while keeping the statusline, remove the `source history-lib.sh` and `history_append` lines from `track-delegation-pre.sh` and `track-delegation-post.sh`. The counter file and statusline will continue to work unchanged.
 
 ## Troubleshooting
 
@@ -77,15 +150,23 @@ Inspect the raw JSONL for the current session:
 ```bash
 cat ~/.claude/state/delegations-*.jsonl | jq .
 ```
-Each delegation produces two lines: one with `"status":"running"` (from PreToolUse) and one with `"status":"done"` (from PostToolUse). If you see only running lines, the PostToolUse hook may not have fired yet or the task is still in progress.
+Each delegation produces two lines: one with `"status":"running"` (from PreToolUse) and one with `"status":"done"` or `"status":"failed"` (from PostToolUse or PostToolUseFailure). If you see only running lines, the PostToolUse hook may not have fired yet or the task is still in progress.
+
+**`⚠ ▶` stale marker appearing**
+A delegation has been running for more than 30 minutes with no completion event. This usually means the PostToolUse hook did not fire (Claude Code was restarted mid-task, or the task errored before the hook could run). The stale entry will clear automatically when the session's counter file is no longer read (new session). To clear it manually, delete or empty the relevant `~/.claude/state/delegations-<session_id>.jsonl` file.
+
+**`/subagents` shows no history**
+The history file lives at `~/.claude/state/delegation-history.jsonl` by default. If `CLAUDE_PLUGIN_DATA` is set in your environment, check `$CLAUDE_PLUGIN_DATA/history.jsonl` instead.
 
 ## How it works
 
-1. **PreToolUse** fires when Claude Code dispatches a Task delegation — the hook appends a `"running"` entry to `~/.claude/state/delegations-<session_id>.jsonl`.
-2. **PostToolUse** fires when the Task completes — the hook appends a `"done"` entry for the same `tool_use_id`.
-3. **`statusline.sh`** reads the JSONL, counts unique running and done ids, builds the progress bar from the context window percentage, and prints the formatted line on stdout.
+1. **PreToolUse** fires when Claude Code dispatches a Task delegation — the hook appends a `"running"` entry to the per-session counter file AND a full seed entry (including full prompt) to the global history file.
+2. **PostToolUse** fires when the Task completes — the hook appends a `"done"` entry to both the counter file and the history file (with cost and token metrics).
+3. **PostToolUseFailure** fires when the Task fails — the hook appends a `"failed"` entry to both files (metrics are null since failure payloads do not reliably carry cost data).
+4. **`statusline.sh`** reads the per-session counter JSONL, counts unique running/done/failed ids, finds the oldest in-flight entry, builds the progress bar from the context window percentage, and prints the formatted line on stdout.
+5. **`/subagents`** reads the global history JSONL, folds running+finalization entries by `tool_use_id`, and renders the requested view (table, stats, or detail).
 
-All three steps are stateless and append-only — no daemons, no locks, no in-place edits.
+All steps are stateless and append-only — no daemons, no locks, no in-place edits. The history file is trimmed atomically (temp-file + rename) when it exceeds 600 lines, keeping the last 500.
 
 ## Contributing
 
