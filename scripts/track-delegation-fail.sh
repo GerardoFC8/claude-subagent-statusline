@@ -6,9 +6,7 @@
 # History line shape: {"session_id","tool_use_id","ended","duration_ms":null,
 #                      "status":"failed","total_cost_usd":null,"usage":null}
 # Design decision (AD-2.4): counter file gains status:"failed" so statusline reads one source.
-# PostToolUseFailure payload shape assumed mirrors PostToolUse {session_id, tool_use_id}.
-# Live trigger could not be reproduced (validation errors caught before hooks fire); script
-# exits 0 silently if shape differs, so worst case is missing failure entries — never breakage.
+# Failure capture is best-effort: PostToolUseFailure does NOT fire for client-side validation errors (only runtime failures).
 # MUST exit 0 in ALL cases (Claude Code blocks the host turn on non-zero hook exit).
 
 set -uo pipefail

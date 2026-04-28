@@ -1,7 +1,6 @@
 #!/usr/bin/env bats
 # tests/subagents-skill.bats — REQ-COMMAND-001..006
-# Markdown lint tests: assert required sections and prescriptive content
-# are present in commands/subagents.md. No markdown parser needed — grep -F.
+# Markdown lint tests for commands/subagents.md (v0.3.0: thin passthrough to render-subagents.sh).
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 SKILL_FILE="$REPO_ROOT/commands/subagents.md"
@@ -21,10 +20,10 @@ SKILL_FILE="$REPO_ROOT/commands/subagents.md"
 }
 
 # ---------------------------------------------------------------------------
-# Test 3: declares allowed-tools Bash and Read
+# Test 3: declares allowed-tools Bash
 # ---------------------------------------------------------------------------
-@test "skill: declares allowed-tools: Bash, Read" {
-  grep -qF 'allowed-tools: Bash, Read' "$SKILL_FILE"
+@test "skill: declares allowed-tools: Bash" {
+  grep -qF 'allowed-tools: Bash' "$SKILL_FILE"
 }
 
 # ---------------------------------------------------------------------------
@@ -35,122 +34,59 @@ SKILL_FILE="$REPO_ROOT/commands/subagents.md"
 }
 
 # ---------------------------------------------------------------------------
-# Test 5: contains path-resolution env var and fallback  (REQ-COMMAND-002)
+# Test 5: invokes render-subagents.sh  (REQ-COMMAND-002)
 # ---------------------------------------------------------------------------
-@test "skill: contains CLAUDE_PLUGIN_DATA env var reference" {
-  grep -qF 'CLAUDE_PLUGIN_DATA' "$SKILL_FILE"
-}
-
-@test "skill: contains delegation-history.jsonl fallback path" {
-  grep -qF 'delegation-history.jsonl' "$SKILL_FILE"
+@test "skill: invokes render-subagents.sh" {
+  grep -qF 'render-subagents.sh' "$SKILL_FILE"
 }
 
 # ---------------------------------------------------------------------------
-# Test 6: contains the empty-state literal  (REQ-COMMAND-003)
+# Test 6: passes \$ARGUMENTS to the script  (REQ-COMMAND-003)
 # ---------------------------------------------------------------------------
-@test "skill: contains empty-state message 'No delegations recorded yet.'" {
-  grep -qF 'No delegations recorded yet.' "$SKILL_FILE"
+@test "skill: passes \$ARGUMENTS to render-subagents.sh" {
+  grep -qF '"$ARGUMENTS"' "$SKILL_FILE"
 }
 
 # ---------------------------------------------------------------------------
-# Test 7: contains the fold jq pipeline anchor  (REQ-COMMAND-004)
+# Test 7: uses CLAUDE_PLUGIN_ROOT for script path  (REQ-COMMAND-004)
 # ---------------------------------------------------------------------------
-@test "skill: contains fold jq pipeline using group_by(.tool_use_id)" {
-  grep -qF 'group_by(.tool_use_id)' "$SKILL_FILE"
+@test "skill: uses CLAUDE_PLUGIN_ROOT to reference script" {
+  grep -qF 'CLAUDE_PLUGIN_ROOT' "$SKILL_FILE"
 }
 
 # ---------------------------------------------------------------------------
-# Test 8: contains the table header markers  (REQ-COMMAND-004)
+# Test 8: instructs verbatim output (no commentary)  (REQ-COMMAND-005)
 # ---------------------------------------------------------------------------
-@test "skill: contains table header with # column" {
-  grep -qF '| #' "$SKILL_FILE"
-}
-
-@test "skill: contains table header with Description column hint" {
-  grep -qF 'Description' "$SKILL_FILE"
+@test "skill: instructs verbatim stdout output with no commentary" {
+  grep -qF 'verbatim' "$SKILL_FILE"
 }
 
 # ---------------------------------------------------------------------------
-# Test 9: contains the stats jq fragment  (REQ-COMMAND-005)
+# Test 9: manifest test — commands/subagents.md is non-empty  (REQ-MANIFEST-006)
 # ---------------------------------------------------------------------------
-@test "skill: contains stats jq fragment group_by(.subagent_type" {
-  grep -qF 'group_by(.subagent_type' "$SKILL_FILE"
+@test "skill: commands/subagents.md is non-empty" {
+  [ -s "$SKILL_FILE" ]
 }
 
 # ---------------------------------------------------------------------------
-# Test 10: hard cap at 100 is documented  (REQ-COMMAND-004)
+# Test 10: does NOT contain the old heavy jq fold pipeline (v0.3.0 cleanup)
 # ---------------------------------------------------------------------------
-@test "skill: documents hard cap at 100 entries" {
-  grep -qF '100' "$SKILL_FILE"
+@test "skill: does NOT contain old group_by(.tool_use_id) jq pipeline" {
+  ! grep -qF 'group_by(.tool_use_id)' "$SKILL_FILE"
 }
 
 # ---------------------------------------------------------------------------
-# Test 11: detail mode header is present  (REQ-COMMAND-006)
+# Test 11: does NOT contain Cost column (removed in v0.2.0, kept absent)
 # ---------------------------------------------------------------------------
-@test "skill: contains detail mode header 'Delegation #'" {
-  grep -qF 'Delegation #' "$SKILL_FILE"
-}
-
-# ---------------------------------------------------------------------------
-# Post-gate delta tests (Change B + E)
-# ---------------------------------------------------------------------------
-
-# Test 12: Tokens column present (Change B — replaces Cost)
-@test "skill: table header contains Tokens column" {
-  grep -qF 'Tokens' "$SKILL_FILE"
-}
-
-# Test 13: usage.input_tokens jq usage present (Change B)
-@test "skill: contains usage.input_tokens jq reference" {
-  grep -qF 'usage.input_tokens' "$SKILL_FILE"
-}
-
-# Test 14: Cost column NOT present in table header example (Change B)
-@test "skill: table header example does not contain Cost column" {
-  # The table header line must not have '| Cost' (removed column)
-  # We use grep -v to confirm the table example no longer has a Cost header cell
+@test "skill: does NOT contain Cost column reference" {
   ! grep -qF '| Cost' "$SKILL_FILE"
 }
 
-# Test 15: detail mode includes Response section (Change E)
-@test "skill: detail mode includes Response section heading" {
-  grep -qF '## Response' "$SKILL_FILE"
-}
-
-# Test 16: detail mode response null case documented (Change E)
-@test "skill: detail mode documents null response fallback" {
-  grep -qF 'no response captured' "$SKILL_FILE"
-}
-
 # ---------------------------------------------------------------------------
-# v0.2.1 regression tests — jq null-binding bug fix
+# Test 12: script render-subagents.sh exists and is executable
 # ---------------------------------------------------------------------------
-
-# Test 17: fold pipeline uses first(...) // null pattern  (v0.2.1)
-# Regression: the old (.[] | select(...)) as $name pattern collapses the
-# entire group when the select returns empty (e.g. no failed entry for a
-# successful delegation). Every (.[] | select(...)) as $name must be replaced
-# with (first(.[] | select(...)) // null) as $name.
-@test "skill: jq fold pipeline uses first(...) // null for status bindings" {
-  # Must find at least one line with the safe first(...) // null pattern
-  run grep -cE 'first\(\.\[\] \| select\(\.status' "$SKILL_FILE"
-  [ "$status" -eq 0 ]
-  [ "$output" -ge 1 ]
-}
-
-# Test 18: the old bare-select pattern is NOT present in the fold pipeline  (v0.2.1)
-# If this matches, the buggy pattern is still there.
-@test "skill: jq fold pipeline does NOT use bare (.[] | select(.status==)) as binding" {
-  # The dangerous pattern is: (.[] | select(.status==  — without 'first('
-  # We count lines with that pattern; the count must be 0.
-  count="$(grep -cE '^\s+\(\.\[\] \| select\(\.status' "$SKILL_FILE" || true)"
-  [ "$count" -eq 0 ]
-}
-
-# Test 19: null fallback operators are used sufficiently in the skill  (v0.2.1)
-# The fixed pipeline must use // null or // "—" for null-safe field access.
-@test "skill: jq pipelines use null-fallback operators (// null or // \"—\") at least 3 times" {
-  run grep -cE '(// null|// "—")' "$SKILL_FILE"
-  [ "$status" -eq 0 ]
-  [ "$output" -ge 3 ]
+@test "skill: render-subagents.sh exists and is executable" {
+  local script="$REPO_ROOT/scripts/render-subagents.sh"
+  [ -f "$script" ]
+  [ -x "$script" ]
 }

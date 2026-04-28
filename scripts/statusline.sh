@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/statusline.sh
 # Statusline renderer — reads stdin JSON, emits a formatted statusline string.
-# v0.2: adds in-flight winner (▶), stale prefix (⚠), and failed counter (✗).
+# v0.3: adds ⏱ session elapsed (oldest started entry); removes ▶/⚠ in-flight segment.
 # MUST exit 0 in ALL cases.
 
 set -uo pipefail
@@ -50,7 +50,7 @@ for (( i = 0; i < empty;  i++ )); do bar+="░"; done
 running=0
 done_count=0
 failed_count=0
-inflight=""
+elapsed_seg=""
 state_file="${HOME}/.claude/state/delegations-${session_id}.jsonl"
 
 if [[ -n "$session_id" && -r "$state_file" ]]; then
@@ -73,46 +73,24 @@ if [[ -n "$session_id" && -r "$state_file" ]]; then
     ($r - $d - $f) | length
   ' "$state_file" 2>/dev/null)" || running=0
 
-  # In-flight winner: oldest still-running entry (not closed by done or failed).
-  winner_json="$(jq -cs '
-    (map(select(.status == "done")   | .id) | unique) as $d |
-    (map(select(.status == "failed") | .id) | unique) as $f |
-    [ .[] | select(.status == "running") | select( ([.id] | inside($d + $f)) | not ) ]
-    | sort_by(.started)
-    | .[0]
-    // empty
-  ' "$state_file" 2>/dev/null)" || winner_json=""
+  # Session elapsed: time since the oldest entry with a "started" field.
+  oldest_started="$(jq -rs '
+    [.[] | select(.started != null and .started != "") | .started] | sort | .[0] // empty
+  ' "$state_file" 2>/dev/null)" || oldest_started=""
 
-  if [[ -n "$winner_json" && "$winner_json" != "null" ]]; then
-    w_type="$(printf '%s' "$winner_json" | jq -r '.type // ""')"
-    w_desc="$(printf '%s' "$winner_json" | jq -r '.desc // ""')"
-    w_started="$(printf '%s' "$winner_json" | jq -r '.started // empty')"
+  if [[ -n "$oldest_started" ]]; then
+    now_s="$(date +%s)"
+    started_s="$(date -d "$oldest_started" +%s 2>/dev/null || printf '%s' "$now_s")"
+    sess_elapsed=$(( now_s - started_s ))
+    (( sess_elapsed < 0 )) && sess_elapsed=0
 
-    if [[ -n "$w_started" ]]; then
-      now_s="$(date +%s)"
-      started_s="$(date -d "$w_started" +%s 2>/dev/null || printf '%s' "$now_s")"
-      elapsed=$(( now_s - started_s ))
-      (( elapsed < 0 )) && elapsed=0
-
-      # Format elapsed: Xs / Xm Ys / Xh Ym
-      if   (( elapsed < 60   )); then elapsed_fmt="${elapsed}s"
-      elif (( elapsed < 3600 )); then elapsed_fmt="$((elapsed/60))m $((elapsed%60))s"
-      else                            elapsed_fmt="$((elapsed/3600))h $(((elapsed%3600)/60))m"
-      fi
-
-      # Truncate desc to 30 chars with ellipsis (ASCII-safe).
-      if (( ${#w_desc} > 30 )); then
-        desc_trunc="${w_desc:0:29}…"
-      else
-        desc_trunc="$w_desc"
-      fi
-
-      # Stale prefix when elapsed > 1800s (30 minutes).
-      stale_marker=""
-      (( elapsed > 1800 )) && stale_marker="⚠ "
-
-      inflight=$(printf '%s▶ %s: "%s" (%s) │ ' "$stale_marker" "$w_type" "$desc_trunc" "$elapsed_fmt")
+    # Format elapsed: Xs / Xm Ys / Xh Ym
+    if   (( sess_elapsed < 60   )); then sess_elapsed_fmt="${sess_elapsed}s"
+    elif (( sess_elapsed < 3600 )); then sess_elapsed_fmt="$((sess_elapsed/60))m $((sess_elapsed%60))s"
+    else                                 sess_elapsed_fmt="$((sess_elapsed/3600))h $(((sess_elapsed%3600)/60))m"
     fi
+
+    elapsed_seg=" │ ⏱ ${sess_elapsed_fmt}"
   fi
 fi
 
@@ -121,9 +99,9 @@ failed_seg=""
 (( failed_count > 0 )) && failed_seg=$(printf ' │ ✗ %d failed' "$failed_count")
 
 # Render the final format.
-# When inflight is empty and failed_seg is empty, output is byte-identical to v0.1 baseline.
-printf '[%s] %s%s%s %d%% │ %s⚡ %d running | ✓ %d done%s\n' \
+# When elapsed_seg is empty and failed_seg is empty, output is byte-identical to v0.1 baseline.
+printf '[%s] %s%s%s %d%% │ ⚡ %d running | ✓ %d done%s%s\n' \
   "$model" "$color" "$bar" "$reset" "$pct_int" \
-  "$inflight" "$running" "$done_count" "$failed_seg"
+  "$running" "$done_count" "$failed_seg" "$elapsed_seg"
 
 exit 0
