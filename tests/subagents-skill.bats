@@ -121,3 +121,36 @@ SKILL_FILE="$REPO_ROOT/commands/subagents.md"
 @test "skill: detail mode documents null response fallback" {
   grep -qF 'no response captured' "$SKILL_FILE"
 }
+
+# ---------------------------------------------------------------------------
+# v0.2.1 regression tests — jq null-binding bug fix
+# ---------------------------------------------------------------------------
+
+# Test 17: fold pipeline uses first(...) // null pattern  (v0.2.1)
+# Regression: the old (.[] | select(...)) as $name pattern collapses the
+# entire group when the select returns empty (e.g. no failed entry for a
+# successful delegation). Every (.[] | select(...)) as $name must be replaced
+# with (first(.[] | select(...)) // null) as $name.
+@test "skill: jq fold pipeline uses first(...) // null for status bindings" {
+  # Must find at least one line with the safe first(...) // null pattern
+  run grep -cE 'first\(\.\[\] \| select\(\.status' "$SKILL_FILE"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
+# Test 18: the old bare-select pattern is NOT present in the fold pipeline  (v0.2.1)
+# If this matches, the buggy pattern is still there.
+@test "skill: jq fold pipeline does NOT use bare (.[] | select(.status==)) as binding" {
+  # The dangerous pattern is: (.[] | select(.status==  — without 'first('
+  # We count lines with that pattern; the count must be 0.
+  count="$(grep -cE '^\s+\(\.\[\] \| select\(\.status' "$SKILL_FILE" || true)"
+  [ "$count" -eq 0 ]
+}
+
+# Test 19: null fallback operators are used sufficiently in the skill  (v0.2.1)
+# The fixed pipeline must use // null or // "—" for null-safe field access.
+@test "skill: jq pipelines use null-fallback operators (// null or // \"—\") at least 3 times" {
+  run grep -cE '(// null|// "—")' "$SKILL_FILE"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 3 ]
+}
