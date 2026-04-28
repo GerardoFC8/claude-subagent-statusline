@@ -253,7 +253,7 @@ write_jsonl() {
 }
 
 # ---------------------------------------------------------------------------
-# Phase 6 tests — in-flight, failed counter, stale prefix
+# Phase 6 tests — session elapsed, failed counter
 # REQ-STATUSLINE-009..013
 # ---------------------------------------------------------------------------
 
@@ -266,70 +266,120 @@ jsonl_running_ago() {
     "$id" "$type" "$desc" "$started"
 }
 
-@test "statusline: single in-flight shows ▶ segment with elapsed" {
-  # One running entry started 75 seconds ago
-  local sf
-  sf="$(state_file_for INFL1)"
-  printf '%s\n' "$(jsonl_running_ago toolu_A sdd-spec "Write spec for X" 75)" >> "$sf"
+# ---------------------------------------------------------------------------
+# Session elapsed tests (v0.3.0 — replaces ▶/⚠ in-flight segment)
+# ---------------------------------------------------------------------------
 
-  local payload='{"session_id":"INFL1","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+@test "statusline: shows session elapsed segment when counter file has entries" {
+  local sf
+  sf="$(state_file_for ELAP1)"
+  # Entry started 75 seconds ago
+  printf '%s\n' "$(jsonl_running_ago toolu_A sdd-spec "Some task" 75)" >> "$sf"
+
+  local payload='{"session_id":"ELAP1","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
   run run_statusline "$payload"
   [ "$status" -eq 0 ]
 
-  [[ "$output" == *"▶"* ]]
-  [[ "$output" == *"Write spec for X"* ]]
-  # elapsed is 75s = 1m 15s
+  [[ "$output" == *"⏱"* ]]
+  # 75s = 1m 15s, so output should contain elapsed time
   [[ "$output" == *"1m"* ]]
 }
 
-@test "statusline: in-flight winner picks oldest among multiple running" {
-  local sf
-  sf="$(state_file_for INFL2)"
-  printf '%s\n' "$(jsonl_running_ago toolu_A sdd-spec "Newest desc" 10)"  >> "$sf"
-  printf '%s\n' "$(jsonl_running_ago toolu_B sdd-design "Middle desc" 30)" >> "$sf"
-  printf '%s\n' "$(jsonl_running_ago toolu_C sdd-apply "Oldest desc" 60)"  >> "$sf"
-
-  local payload='{"session_id":"INFL2","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+@test "statusline: omits session elapsed when counter file is empty" {
+  # No state file for this session — elapsed segment must not appear
+  local payload='{"session_id":"ELAP2","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
   run run_statusline "$payload"
   [ "$status" -eq 0 ]
 
-  # Oldest-started (60s ago) must win
-  [[ "$output" == *"Oldest desc"* ]]
-  # Newer ones must NOT appear
-  [[ "$output" != *"Newest desc"* ]]
-  [[ "$output" != *"Middle desc"* ]]
+  [[ "$output" != *"⏱"* ]]
 }
 
-@test "statusline: in-flight desc truncated to 30 chars with ellipsis" {
-  local long_desc="This is a very long description that exceeds thirty characters"
+@test "statusline: session elapsed uses oldest started, not newest" {
   local sf
-  sf="$(state_file_for INFL3)"
-  printf '{"id":"toolu_T","type":"sdd-spec","desc":"%s","started":"%s","status":"running"}\n' \
-    "$long_desc" "$(date -Iseconds)" >> "$sf"
+  sf="$(state_file_for ELAP3)"
+  # Newest entry: 10s ago; oldest entry: 120s ago
+  printf '%s\n' "$(jsonl_running_ago toolu_B sdd-spec "Newer task" 10)"   >> "$sf"
+  printf '%s\n' "$(jsonl_running_ago toolu_A sdd-spec "Oldest task" 120)" >> "$sf"
 
-  local payload='{"session_id":"INFL3","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  local payload='{"session_id":"ELAP3","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
   run run_statusline "$payload"
   [ "$status" -eq 0 ]
 
-  [[ "$output" == *"▶"* ]]
-  # Output must contain the ellipsis character (truncation applied)
-  [[ "$output" == *"…"* ]]
-  # Full desc must NOT appear
-  [[ "$output" != *"$long_desc"* ]]
+  # 120s = 2m 0s — output must show something ≥2m (not the 10s from the newer entry)
+  [[ "$output" == *"⏱"* ]]
+  [[ "$output" == *"2m"* ]]
 }
 
-@test "statusline: stale running (>30min) shows ⚠ prefix" {
+@test "statusline: session elapsed format sub-minute shows Xs" {
   local sf
-  sf="$(state_file_for STALE1)"
-  # 31 minutes = 1860 seconds ago
-  printf '%s\n' "$(jsonl_running_ago toolu_S sdd-spec "Stale task" 1860)" >> "$sf"
+  sf="$(state_file_for ELAP4)"
+  # Entry started 30 seconds ago
+  printf '%s\n' "$(jsonl_running_ago toolu_C sdd-spec "Quick task" 30)" >> "$sf"
 
-  local payload='{"session_id":"STALE1","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  local payload='{"session_id":"ELAP4","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
   run run_statusline "$payload"
   [ "$status" -eq 0 ]
 
-  [[ "$output" == *"⚠"* ]]
-  [[ "$output" == *"▶"* ]]
+  [[ "$output" == *"⏱"* ]]
+  # 30s format: "30s" (no minutes)
+  [[ "$output" == *"30s"* ]] || [[ "$output" == *"s"* ]]
+}
+
+@test "statusline: session elapsed format sub-hour shows Xm Ys" {
+  local sf
+  sf="$(state_file_for ELAP5)"
+  # 90 seconds = 1m 30s
+  printf '%s\n' "$(jsonl_running_ago toolu_D sdd-spec "Mid task" 90)" >> "$sf"
+
+  local payload='{"session_id":"ELAP5","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" == *"⏱"* ]]
+  [[ "$output" == *"1m"* ]]
+}
+
+@test "statusline: session elapsed format multi-hour shows Xh Ym" {
+  local sf
+  sf="$(state_file_for ELAP6)"
+  # 3700 seconds = 1h 1m
+  printf '%s\n' "$(jsonl_running_ago toolu_E sdd-spec "Long task" 3700)" >> "$sf"
+
+  local payload='{"session_id":"ELAP6","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" == *"⏱"* ]]
+  [[ "$output" == *"1h"* ]]
+}
+
+@test "statusline: no ▶ segment (in-flight removed in v0.3.0)" {
+  local sf
+  sf="$(state_file_for NOINFL)"
+  printf '%s\n' "$(jsonl_running_ago toolu_X sdd-spec "Some running task" 75)" >> "$sf"
+
+  local payload='{"session_id":"NOINFL","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  # The ▶ segment must NOT appear in v0.3.0
+  [[ "$output" != *"▶"* ]]
+}
+
+@test "statusline: no ⚠ stale segment (removed in v0.3.0)" {
+  local sf
+  sf="$(state_file_for NOSTALE)"
+  # 31 minutes = 1860 seconds ago — previously would have triggered ⚠
+  printf '%s\n' "$(jsonl_running_ago toolu_S sdd-spec "Old task" 1860)" >> "$sf"
+
+  local payload='{"session_id":"NOSTALE","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" != *"⚠"* ]]
+  [[ "$output" != *"▶"* ]]
+  # But ⏱ should still appear
+  [[ "$output" == *"⏱"* ]]
 }
 
 @test "statusline: failed counter shows ✗ N failed when F≥1" {
@@ -383,7 +433,7 @@ jsonl_running_ago() {
   [[ "$output" != *"▶"* ]]
 }
 
-@test "statusline: mixed done+failed+running renders all three segments" {
+@test "statusline: mixed done+failed+running renders correct counts (no ▶ in v0.3.0)" {
   local sf
   sf="$(state_file_for MIX1)"
   local t
@@ -404,7 +454,8 @@ jsonl_running_ago() {
   [[ "$output" == *"1 done"* ]]
   [[ "$output" == *"✗ 1 failed"* ]]
   [[ "$output" == *"1 running"* ]]
-  [[ "$output" == *"▶"* ]]
+  # No ▶ segment in v0.3.0
+  [[ "$output" != *"▶"* ]]
 }
 
 @test "statusline: regression — empty counter output identical to v0.1 format" {

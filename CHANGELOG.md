@@ -7,6 +7,42 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] — 2026-04-28
+
+### Removed
+
+- **In-flight winner segment (`▶ ...`)**: The `▶ <type>: "<desc>" (<elapsed>)` segment and the
+  `⚠` stale prefix (>30 min running) have been removed from the statusline. Long-running agents
+  are normal and the misleading stale marker was causing confusion.
+
+### Added
+
+- **Session elapsed segment (`⏱`)**: The statusline now shows how long the current Claude Code
+  session has been alive, computed from the oldest `started` timestamp in the per-session counter
+  file. Format: `Xs` < 1 min, `Xm Ys` < 1 h, `Xh Ym` otherwise. Segment omitted if no counter
+  file exists (no delegations yet).
+
+- **`scripts/render-subagents.sh`**: Token-free bash renderer for the `/subagents` slash command.
+  Implements all three modes (table, stats, detail) by reading the history JSONL directly and
+  printing ANSI-colored output. Replaces the heavy LLM-driven jq pipeline in `commands/subagents.md`.
+
+- **Cache token fields** (bonus): `track-delegation-post.sh` now captures
+  `cache_read_input_tokens` and `cache_creation_input_tokens` from `tool_response.usage.*`,
+  and `total_tool_use_count` from `tool_response.totalToolUseCount`. All three are recorded in
+  the history entry's `usage` object and `total_tool_use_count` top-level field respectively.
+
+### Changed
+
+- **`/subagents` slash command** (`commands/subagents.md`): Reduced from ~200 lines of LLM
+  instructions to a 10-line thin passthrough that runs `render-subagents.sh "$ARGUMENTS"` and
+  prints stdout verbatim. Near-zero token cost per invocation (was ~5K tokens).
+
+- **EMPIRICAL comments removed**: Resolved historical investigation notes cleaned up from
+  `scripts/track-delegation-pre.sh` (G1 confirmed) and `scripts/track-delegation-fail.sh`
+  (G3 documented as known limitation with a concise one-liner).
+
+---
+
 ## [0.2.1] — 2026-04-28
 
 ### Fixed

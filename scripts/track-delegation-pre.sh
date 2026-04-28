@@ -48,7 +48,6 @@ counter_line="$(jq -cn \
 printf '%s\n' "$counter_line" >> "$state_file" 2>/dev/null || true
 
 # --- History entry (full-fat; safe encoding via jq --arg for arbitrary prompt content) ---
-# CLAUDE_PLUGIN_DATA is auto-set by Claude Code per-plugin (confirmed via live gate).
 history_entry="$(jq -cn \
   --arg session_id    "$session_id" \
   --arg tool_use_id   "$tool_use_id" \

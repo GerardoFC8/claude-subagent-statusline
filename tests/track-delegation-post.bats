@@ -305,3 +305,60 @@ load helpers
   text_part="${response% …(truncated)}"
   [ "${#text_part}" -eq 16384 ]
 }
+
+# ---------------------------------------------------------------------------
+# Bonus (v0.3.0) — cache token fields and total_tool_use_count
+# ---------------------------------------------------------------------------
+
+@test "post: history entry captures cache_read_input_tokens and cache_creation_input_tokens" {
+  local pre_payload='{"tool_use_id":"toolu_C1","session_id":"SC1","tool_input":{"subagent_type":"sdd-spec","description":"cache test","prompt":"p"},"cwd":"/c1"}'
+  run_pre "$pre_payload"
+
+  local post_payload
+  post_payload='{"tool_use_id":"toolu_C1","session_id":"SC1","duration_ms":1000,"tool_response":{"usage":{"input_tokens":100,"output_tokens":200,"cache_read_input_tokens":5000,"cache_creation_input_tokens":1500}}}'
+  run run_post "$post_payload"
+  [ "$status" -eq 0 ]
+
+  local hf fin
+  hf="$(history_file_for)"
+  fin="$(tail -1 "$hf")"
+
+  [ "$(printf '%s' "$fin" | jq -r '.usage.input_tokens')"                = "100"  ]
+  [ "$(printf '%s' "$fin" | jq -r '.usage.output_tokens')"               = "200"  ]
+  [ "$(printf '%s' "$fin" | jq -r '.usage.cache_read_input_tokens')"     = "5000" ]
+  [ "$(printf '%s' "$fin" | jq -r '.usage.cache_creation_input_tokens')" = "1500" ]
+}
+
+@test "post: history entry captures total_tool_use_count" {
+  local pre_payload='{"tool_use_id":"toolu_C2","session_id":"SC2","tool_input":{"subagent_type":"sdd-spec","description":"tool count test","prompt":"p"},"cwd":"/c2"}'
+  run_pre "$pre_payload"
+
+  local post_payload
+  post_payload='{"tool_use_id":"toolu_C2","session_id":"SC2","duration_ms":2000,"tool_response":{"totalToolUseCount":42,"usage":{"input_tokens":50,"output_tokens":100}}}'
+  run run_post "$post_payload"
+  [ "$status" -eq 0 ]
+
+  local hf fin
+  hf="$(history_file_for)"
+  fin="$(tail -1 "$hf")"
+
+  [ "$(printf '%s' "$fin" | jq -r '.total_tool_use_count')" = "42" ]
+}
+
+@test "post: cache fields are null when absent from payload" {
+  local pre_payload='{"tool_use_id":"toolu_C3","session_id":"SC3","tool_input":{"subagent_type":"sdd-spec","description":"no cache","prompt":"p"},"cwd":"/c3"}'
+  run_pre "$pre_payload"
+
+  # Payload without cache fields
+  local post_payload='{"tool_use_id":"toolu_C3","session_id":"SC3","tool_response":{"usage":{"input_tokens":10,"output_tokens":20}}}'
+  run run_post "$post_payload"
+  [ "$status" -eq 0 ]
+
+  local hf fin
+  hf="$(history_file_for)"
+  fin="$(tail -1 "$hf")"
+
+  [ "$(printf '%s' "$fin" | jq -r '.usage.cache_read_input_tokens')"     = "null" ]
+  [ "$(printf '%s' "$fin" | jq -r '.usage.cache_creation_input_tokens')" = "null" ]
+  [ "$(printf '%s' "$fin" | jq -r '.total_tool_use_count')"              = "null" ]
+}

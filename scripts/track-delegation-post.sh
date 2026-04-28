@@ -5,6 +5,8 @@
 # Counter line shape: {"id","ended"(ISO8601+TZ),"status":"done"}
 # History line shape: {"session_id","tool_use_id","ended","duration_ms","status":"done",
 #                      "total_cost_usd","usage","response"}
+# usage includes: input_tokens, output_tokens, cache_read_input_tokens,
+#                 cache_creation_input_tokens; total_tool_use_count at top level.
 # response: tool_response.content[0].text, truncated at 16384 bytes; null if absent.
 # MUST exit 0 in ALL cases (Claude Code blocks the host turn on non-zero hook exit).
 
@@ -33,11 +35,13 @@ state_file="${state_dir}/delegations-${session_id}.jsonl"
 [[ -r "$state_file" ]] || exit 0
 
 # Metrics from PostToolUse payload.
-# EMPIRICAL: duration_ms is at top-level (confirmed via live gate).
-duration_ms="$(printf '%s' "$payload"    | jq -r '.duration_ms // empty')"
-total_cost_usd="$(printf '%s' "$payload" | jq -r '.tool_response.total_cost_usd // empty')"
-input_tokens="$(printf '%s' "$payload"   | jq -r '.tool_response.usage.input_tokens // empty')"
-output_tokens="$(printf '%s' "$payload"  | jq -r '.tool_response.usage.output_tokens // empty')"
+duration_ms="$(printf '%s' "$payload"               | jq -r '.duration_ms // empty')"
+total_cost_usd="$(printf '%s' "$payload"            | jq -r '.tool_response.total_cost_usd // empty')"
+input_tokens="$(printf '%s' "$payload"              | jq -r '.tool_response.usage.input_tokens // empty')"
+output_tokens="$(printf '%s' "$payload"             | jq -r '.tool_response.usage.output_tokens // empty')"
+cache_read_tokens="$(printf '%s' "$payload"         | jq -r '.tool_response.usage.cache_read_input_tokens // empty')"
+cache_creation_tokens="$(printf '%s' "$payload"     | jq -r '.tool_response.usage.cache_creation_input_tokens // empty')"
+total_tool_use_count="$(printf '%s' "$payload"      | jq -r '.tool_response.totalToolUseCount // empty')"
 
 # Response text: tool_response.content[0].text (EMPIRICAL: confirmed present in live gate).
 # Truncate at 16384 bytes to bound history file growth.
@@ -72,26 +76,40 @@ dms_j="$(to_json_num "$duration_ms")"
 cost_j="$(to_json_num "$total_cost_usd")"
 in_j="$(to_json_num "$input_tokens")"
 out_j="$(to_json_num "$output_tokens")"
+cr_j="$(to_json_num "$cache_read_tokens")"
+cc_j="$(to_json_num "$cache_creation_tokens")"
+ttuc_j="$(to_json_num "$total_tool_use_count")"
 
 history_entry="$(jq -cn \
   --arg session_id   "$session_id" \
   --arg tool_use_id  "$tool_use_id" \
   --arg ended        "$ended" \
   --arg response_str "$response_text" \
-  --argjson duration_ms    "$dms_j" \
-  --argjson total_cost_usd "$cost_j" \
-  --argjson input_tokens   "$in_j" \
-  --argjson output_tokens  "$out_j" \
+  --argjson duration_ms              "$dms_j" \
+  --argjson total_cost_usd           "$cost_j" \
+  --argjson input_tokens             "$in_j" \
+  --argjson output_tokens            "$out_j" \
+  --argjson cache_read_input_tokens  "$cr_j" \
+  --argjson cache_creation_input_tokens "$cc_j" \
+  --argjson total_tool_use_count     "$ttuc_j" \
   '{
-    session_id:     $session_id,
-    tool_use_id:    $tool_use_id,
-    ended:          $ended,
-    duration_ms:    $duration_ms,
-    status:         "done",
-    total_cost_usd: $total_cost_usd,
+    session_id:          $session_id,
+    tool_use_id:         $tool_use_id,
+    ended:               $ended,
+    duration_ms:         $duration_ms,
+    status:              "done",
+    total_cost_usd:      $total_cost_usd,
+    total_tool_use_count: $total_tool_use_count,
     usage: (if $input_tokens == null and $output_tokens == null
+              and $cache_read_input_tokens == null
+              and $cache_creation_input_tokens == null
             then null
-            else {input_tokens: $input_tokens, output_tokens: $output_tokens}
+            else {
+              input_tokens:              $input_tokens,
+              output_tokens:             $output_tokens,
+              cache_read_input_tokens:   $cache_read_input_tokens,
+              cache_creation_input_tokens: $cache_creation_input_tokens
+            }
             end),
     response: (if $response_str == "" then null else $response_str end)
   }')"
