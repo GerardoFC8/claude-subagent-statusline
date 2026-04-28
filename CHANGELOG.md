@@ -7,6 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.1] — 2026-04-28
+
+### Fixed
+
+- **`render-subagents.sh` and `history-lib.sh` — wrong history file path when invoked outside hook subprocesses**:
+  Claude Code only sets `CLAUDE_PLUGIN_DATA` in hook subprocesses. When `/subagents` was invoked
+  via the Bash tool from a slash command, `CLAUDE_PLUGIN_DATA` was unset and both scripts fell
+  back to `~/.claude/state/delegation-history.jsonl` — an essentially unused legacy path. The real
+  history written by hooks lives at the per-plugin data convention path
+  (`~/.claude/plugins/data/claude-subagent-statusline-claude-subagent-statusline/history.jsonl`).
+  Fixed by introducing three-tier path resolution: (1) `$CLAUDE_PLUGIN_DATA/history.jsonl` when
+  env is set, (2) the convention path when its directory exists, (3) the legacy state path as final
+  fallback. For reads (`render-subagents.sh`), the first path with non-empty content wins.
+
+---
+
 ## [0.3.0] — 2026-04-28
 
 ### Removed

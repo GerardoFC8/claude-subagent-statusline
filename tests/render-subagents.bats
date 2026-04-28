@@ -248,3 +248,88 @@ write_history_running() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"Custom path test"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# v0.3.1 — Convention path tests (fix/render-subagents-path-resolution)
+# REQ-RENDER-PATH-001: reads from convention path when CLAUDE_PLUGIN_DATA unset
+# REQ-RENDER-PATH-002: CLAUDE_PLUGIN_DATA takes precedence over convention path
+# REQ-RENDER-PATH-003: falls back to legacy path when upper paths absent/empty
+# ---------------------------------------------------------------------------
+
+@test "render-subagents: reads from convention path when CLAUDE_PLUGIN_DATA unset" {
+  unset CLAUDE_PLUGIN_DATA
+
+  # Create convention path dir and populate it
+  local convention_dir
+  convention_dir="$HOME/.claude/plugins/data/claude-subagent-statusline-claude-subagent-statusline"
+  mkdir -p "$convention_dir"
+
+  jq -cn \
+    --arg tid "toolu_conv" --arg sid "SES_CONV" \
+    '{session_id:$sid, tool_use_id:$tid, subagent_type:"sdd-apply",
+      description:"Convention path delegation", prompt:"p",
+      started:"2026-04-28T10:00:00+00:00",
+      ended:"2026-04-28T10:01:00+00:00", duration_ms:60000, status:"done",
+      total_cost_usd:null, usage:{input_tokens:100, output_tokens:200}, response:null}' \
+    >> "$convention_dir/history.jsonl"
+
+  # Legacy path must be absent or empty (clean HOME already has no file there)
+
+  run "$RENDERER"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Convention path delegation"* ]]
+}
+
+@test "render-subagents: reads from CLAUDE_PLUGIN_DATA when set, ignores convention path" {
+  local custom_dir convention_dir
+  custom_dir="$BATS_TEST_TMPDIR/env_data"
+  mkdir -p "$custom_dir"
+  export CLAUDE_PLUGIN_DATA="$custom_dir"
+
+  # Populate ONLY the env-set path
+  jq -cn \
+    --arg tid "toolu_env" --arg sid "SES_ENV" \
+    '{session_id:$sid, tool_use_id:$tid, subagent_type:"sdd-spec",
+      description:"Env path delegation", prompt:"p",
+      started:"2026-04-28T10:00:00+00:00",
+      ended:"2026-04-28T10:01:00+00:00", duration_ms:30000, status:"done",
+      total_cost_usd:null, usage:{input_tokens:50, output_tokens:100}, response:null}' \
+    >> "$custom_dir/history.jsonl"
+
+  # Populate convention path with DIFFERENT data — must NOT appear in output
+  convention_dir="$HOME/.claude/plugins/data/claude-subagent-statusline-claude-subagent-statusline"
+  mkdir -p "$convention_dir"
+  jq -cn \
+    '{session_id:"SES_CONV2", tool_use_id:"toolu_conv2", subagent_type:"sdd-tasks",
+      description:"Should not appear", prompt:"p",
+      started:"2026-04-28T09:00:00+00:00",
+      ended:"2026-04-28T09:01:00+00:00", duration_ms:10000, status:"done",
+      total_cost_usd:null, usage:{input_tokens:10, output_tokens:20}, response:null}' \
+    >> "$convention_dir/history.jsonl"
+
+  run "$RENDERER"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Env path delegation"* ]]
+  [[ "$output" != *"Should not appear"* ]]
+}
+
+@test "render-subagents: falls back to legacy path when both upper paths empty or missing" {
+  unset CLAUDE_PLUGIN_DATA
+  # Ensure convention dir does NOT exist
+  rm -rf "$HOME/.claude/plugins" 2>/dev/null || true
+
+  # Populate legacy path only
+  local legacy_file="$HOME/.claude/state/delegation-history.jsonl"
+  jq -cn \
+    --arg tid "toolu_leg" --arg sid "SES_LEG" \
+    '{session_id:$sid, tool_use_id:$tid, subagent_type:"sdd-verify",
+      description:"Legacy path delegation", prompt:"p",
+      started:"2026-04-28T10:00:00+00:00",
+      ended:"2026-04-28T10:01:00+00:00", duration_ms:45000, status:"done",
+      total_cost_usd:null, usage:{input_tokens:200, output_tokens:400}, response:null}' \
+    >> "$legacy_file"
+
+  run "$RENDERER"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Legacy path delegation"* ]]
+}
