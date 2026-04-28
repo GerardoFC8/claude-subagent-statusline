@@ -163,3 +163,136 @@ load helpers
   byte_count="$(wc -c < "$sf")"
   [ "$byte_count" -lt 4096 ]
 }
+
+# ---------------------------------------------------------------------------
+# Phase 3 tests — history writes (REQ-HOOKS-006, REQ-HISTORY-002, REQ-HISTORY-004,
+#                                   REQ-HISTORY-006, REQ-HISTORY-008)
+# ---------------------------------------------------------------------------
+
+@test "pre: also writes history seed entry to history file" {
+  local payload='{"tool_use_id":"toolu_H1","session_id":"SH1","tool_input":{"subagent_type":"sdd-spec","description":"Write spec","prompt":"do the thing"},"cwd":"/project"}'
+  run run_pre "$payload"
+  [ "$status" -eq 0 ]
+
+  local hf
+  hf="$(history_file_for)"
+  [ -f "$hf" ]
+
+  # Exactly one history line
+  local hcount
+  hcount="$(wc -l < "$hf")"
+  [ "$hcount" -eq 1 ]
+
+  local entry
+  entry="$(head -1 "$hf")"
+
+  # All 12 required fields
+  [ "$(printf '%s' "$entry" | jq -r '.session_id')"     = "SH1"       ]
+  [ "$(printf '%s' "$entry" | jq -r '.tool_use_id')"    = "toolu_H1"  ]
+  [ "$(printf '%s' "$entry" | jq -r '.subagent_type')"  = "sdd-spec"  ]
+  [ "$(printf '%s' "$entry" | jq -r '.description')"    = "Write spec" ]
+  [ "$(printf '%s' "$entry" | jq -r '.prompt')"         = "do the thing" ]
+  [ "$(printf '%s' "$entry" | jq -r '.status')"         = "running"   ]
+  [ "$(printf '%s' "$entry" | jq -r '.cwd')"            = "/project"  ]
+  [ "$(printf '%s' "$entry" | jq -r '.ended')"          = "null"      ]
+  [ "$(printf '%s' "$entry" | jq -r '.duration_ms')"    = "null"      ]
+  [ "$(printf '%s' "$entry" | jq -r '.total_cost_usd')" = "null"      ]
+  [ "$(printf '%s' "$entry" | jq -r '.usage')"          = "null"      ]
+
+  # started must be non-empty ISO8601
+  local started
+  started="$(printf '%s' "$entry" | jq -r '.started')"
+  [ -n "$started" ]
+}
+
+@test "pre: history entry preserves multiline prompt with quotes" {
+  local tricky_prompt
+  tricky_prompt='Line one
+Line two with "quotes" and backslash \'
+
+  local payload
+  payload="$(jq -cn \
+    --arg session_id  "SH_RT" \
+    --arg tool_use_id "toolu_RT" \
+    --arg prompt      "$tricky_prompt" \
+    '{
+      session_id:  $session_id,
+      tool_use_id: $tool_use_id,
+      tool_input: {
+        subagent_type: "test",
+        description: "roundtrip",
+        prompt: $prompt
+      },
+      cwd: "/tmp"
+    }')"
+
+  run run_pre "$payload"
+  [ "$status" -eq 0 ]
+
+  local hf
+  hf="$(history_file_for)"
+  [ -f "$hf" ]
+
+  local retrieved
+  retrieved="$(tail -1 "$hf" | jq -r '.prompt')"
+  [ "$retrieved" = "$tricky_prompt" ]
+
+  # Must be valid JSON
+  tail -1 "$hf" | jq -c . > /dev/null
+}
+
+@test "pre: history entry goes to CLAUDE_PLUGIN_DATA path when env is set" {
+  export CLAUDE_PLUGIN_DATA="$BATS_TEST_TMPDIR/pdata"
+  local payload='{"tool_use_id":"toolu_PD","session_id":"SPD","tool_input":{"subagent_type":"sdd-apply","description":"pd test","prompt":"p"},"cwd":"/x"}'
+  run run_pre "$payload"
+  [ "$status" -eq 0 ]
+
+  local expected_hf="$BATS_TEST_TMPDIR/pdata/history.jsonl"
+  [ -f "$expected_hf" ]
+
+  # Must NOT be at fallback path
+  [ ! -f "$HOME/.claude/state/delegation-history.jsonl" ]
+
+  local entry
+  entry="$(head -1 "$expected_hf")"
+  [ "$(printf '%s' "$entry" | jq -r '.tool_use_id')" = "toolu_PD" ]
+}
+
+@test "pre: history entry uses fallback path when CLAUDE_PLUGIN_DATA not set" {
+  unset CLAUDE_PLUGIN_DATA
+  local payload='{"tool_use_id":"toolu_FB","session_id":"SFB","tool_input":{"subagent_type":"sdd-apply","description":"fb","prompt":"p"},"cwd":"/x"}'
+  run run_pre "$payload"
+  [ "$status" -eq 0 ]
+
+  local expected_hf="$HOME/.claude/state/delegation-history.jsonl"
+  [ -f "$expected_hf" ]
+
+  local entry
+  entry="$(head -1 "$expected_hf")"
+  [ "$(printf '%s' "$entry" | jq -r '.tool_use_id')" = "toolu_FB" ]
+}
+
+@test "pre: counter file shape unchanged after history addition (regression)" {
+  local payload='{"tool_use_id":"toolu_CREG","session_id":"SCREG","tool_input":{"subagent_type":"sdd-spec","description":"Desc"},"cwd":"/y"}'
+  run run_pre "$payload"
+  [ "$status" -eq 0 ]
+
+  local sf
+  sf="$(state_file_for SCREG)"
+  [ -f "$sf" ]
+
+  # Counter file first line must have exactly the v0.1 lean shape:
+  # {id, type, desc, started, status:"running"} — NO history fields
+  local line
+  line="$(head -1 "$sf")"
+
+  [ "$(printf '%s' "$line" | jq -r '.id')"     = "toolu_CREG" ]
+  [ "$(printf '%s' "$line" | jq -r '.type')"   = "sdd-spec"   ]
+  [ "$(printf '%s' "$line" | jq -r '.desc')"   = "Desc"       ]
+  [ "$(printf '%s' "$line" | jq -r '.status')" = "running"    ]
+  # Lean counter must NOT have these full-fat history fields
+  [ "$(printf '%s' "$line" | jq '.prompt')"        = "null" ]
+  [ "$(printf '%s' "$line" | jq '.session_id')"    = "null" ]
+  [ "$(printf '%s' "$line" | jq '.tool_use_id')"   = "null" ]
+  [ "$(printf '%s' "$line" | jq '.total_cost_usd')" = "null" ]
+}

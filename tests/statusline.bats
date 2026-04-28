@@ -251,3 +251,174 @@ write_jsonl() {
   [ "$filled" -eq 4 ]
   [ "$empty"  -eq 6 ]
 }
+
+# ---------------------------------------------------------------------------
+# Phase 6 tests — in-flight, failed counter, stale prefix
+# REQ-STATUSLINE-009..013
+# ---------------------------------------------------------------------------
+
+# Helper: create a counter line with a started timestamp N seconds ago.
+jsonl_running_ago() {
+  local id="$1" type="$2" desc="$3" secs_ago="$4"
+  local started
+  started="$(date -d "@$(( $(date +%s) - secs_ago ))" -Iseconds 2>/dev/null || date -Iseconds)"
+  printf '{"id":"%s","type":"%s","desc":"%s","started":"%s","status":"running"}\n' \
+    "$id" "$type" "$desc" "$started"
+}
+
+@test "statusline: single in-flight shows ▶ segment with elapsed" {
+  # One running entry started 75 seconds ago
+  local sf
+  sf="$(state_file_for INFL1)"
+  printf '%s\n' "$(jsonl_running_ago toolu_A sdd-spec "Write spec for X" 75)" >> "$sf"
+
+  local payload='{"session_id":"INFL1","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" == *"▶"* ]]
+  [[ "$output" == *"Write spec for X"* ]]
+  # elapsed is 75s = 1m 15s
+  [[ "$output" == *"1m"* ]]
+}
+
+@test "statusline: in-flight winner picks oldest among multiple running" {
+  local sf
+  sf="$(state_file_for INFL2)"
+  printf '%s\n' "$(jsonl_running_ago toolu_A sdd-spec "Newest desc" 10)"  >> "$sf"
+  printf '%s\n' "$(jsonl_running_ago toolu_B sdd-design "Middle desc" 30)" >> "$sf"
+  printf '%s\n' "$(jsonl_running_ago toolu_C sdd-apply "Oldest desc" 60)"  >> "$sf"
+
+  local payload='{"session_id":"INFL2","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  # Oldest-started (60s ago) must win
+  [[ "$output" == *"Oldest desc"* ]]
+  # Newer ones must NOT appear
+  [[ "$output" != *"Newest desc"* ]]
+  [[ "$output" != *"Middle desc"* ]]
+}
+
+@test "statusline: in-flight desc truncated to 30 chars with ellipsis" {
+  local long_desc="This is a very long description that exceeds thirty characters"
+  local sf
+  sf="$(state_file_for INFL3)"
+  printf '{"id":"toolu_T","type":"sdd-spec","desc":"%s","started":"%s","status":"running"}\n' \
+    "$long_desc" "$(date -Iseconds)" >> "$sf"
+
+  local payload='{"session_id":"INFL3","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" == *"▶"* ]]
+  # Output must contain the ellipsis character (truncation applied)
+  [[ "$output" == *"…"* ]]
+  # Full desc must NOT appear
+  [[ "$output" != *"$long_desc"* ]]
+}
+
+@test "statusline: stale running (>30min) shows ⚠ prefix" {
+  local sf
+  sf="$(state_file_for STALE1)"
+  # 31 minutes = 1860 seconds ago
+  printf '%s\n' "$(jsonl_running_ago toolu_S sdd-spec "Stale task" 1860)" >> "$sf"
+
+  local payload='{"session_id":"STALE1","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" == *"⚠"* ]]
+  [[ "$output" == *"▶"* ]]
+}
+
+@test "statusline: failed counter shows ✗ N failed when F≥1" {
+  local sf
+  sf="$(state_file_for FAIL1)"
+  # One running then one failed line for same id
+  local started
+  started="$(date -Iseconds)"
+  printf '{"id":"toolu_F","type":"sdd-spec","desc":"d","started":"%s","status":"running"}\n' "$started" >> "$sf"
+  printf '{"id":"toolu_F","ended":"%s","status":"failed"}\n' "$(date -Iseconds)" >> "$sf"
+
+  local payload='{"session_id":"FAIL1","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" == *"✗"* ]]
+  [[ "$output" == *"1 failed"* ]]
+}
+
+@test "statusline: no ✗ segment when F=0" {
+  local sf
+  sf="$(state_file_for FAIL0)"
+  local started
+  started="$(date -Iseconds)"
+  printf '{"id":"toolu_D","type":"sdd-spec","desc":"d","started":"%s","status":"running"}\n' "$started" >> "$sf"
+  printf '{"id":"toolu_D","ended":"%s","status":"done"}\n' "$(date -Iseconds)" >> "$sf"
+
+  local payload='{"session_id":"FAIL0","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" != *"✗"* ]]
+}
+
+@test "statusline: failed entries excluded from running count" {
+  local sf
+  sf="$(state_file_for EXCL1)"
+  local started
+  started="$(date -Iseconds)"
+  # One id: running seed then failed close — must count as 0 running, 1 failed
+  printf '{"id":"toolu_E","type":"sdd-spec","desc":"d","started":"%s","status":"running"}\n' "$started" >> "$sf"
+  printf '{"id":"toolu_E","ended":"%s","status":"failed"}\n' "$(date -Iseconds)" >> "$sf"
+
+  local payload='{"session_id":"EXCL1","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" == *"0 running"* ]]
+  [[ "$output" == *"1 failed"* ]]
+  # No ▶ segment since nothing is actually running
+  [[ "$output" != *"▶"* ]]
+}
+
+@test "statusline: mixed done+failed+running renders all three segments" {
+  local sf
+  sf="$(state_file_for MIX1)"
+  local t
+  t="$(date -Iseconds)"
+  # done id
+  printf '{"id":"toolu_D","type":"sdd-spec","desc":"done task","started":"%s","status":"running"}\n' "$t" >> "$sf"
+  printf '{"id":"toolu_D","ended":"%s","status":"done"}\n' "$t" >> "$sf"
+  # failed id
+  printf '{"id":"toolu_F","type":"sdd-design","desc":"fail task","started":"%s","status":"running"}\n' "$t" >> "$sf"
+  printf '{"id":"toolu_F","ended":"%s","status":"failed"}\n' "$t" >> "$sf"
+  # running id (still running)
+  printf '%s\n' "$(jsonl_running_ago toolu_R sdd-apply "running task" 5)" >> "$sf"
+
+  local payload='{"session_id":"MIX1","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" == *"1 done"* ]]
+  [[ "$output" == *"✗ 1 failed"* ]]
+  [[ "$output" == *"1 running"* ]]
+  [[ "$output" == *"▶"* ]]
+}
+
+@test "statusline: regression — empty counter output identical to v0.1 format" {
+  # No state file — output must match v0.1 baseline (no ▶, no ✗)
+  local payload='{"session_id":"REG1","model":{"display_name":"TestModel"},"context_window":{"used_percentage":30}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  # v0.1-compatible assertions
+  [[ "$output" == *"[TestModel]"* ]]
+  [[ "$output" == *"30%"* ]]
+  [[ "$output" == *"0 running"* ]]
+  [[ "$output" == *"0 done"* ]]
+  # No in-flight or failed segments
+  [[ "$output" != *"▶"* ]]
+  [[ "$output" != *"✗"* ]]
+}

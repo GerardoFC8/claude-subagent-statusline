@@ -23,6 +23,18 @@
           }
         ]
       }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/track-delegation-fail.sh",
+            "async": true
+          }
+        ]
+      }
     ]
   }
 }
