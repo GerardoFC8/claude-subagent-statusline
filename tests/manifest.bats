@@ -21,12 +21,12 @@ REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 }
 
 # ---------------------------------------------------------------------------
-# Test 3: plugin.json version equals "0.2.0"  (REQ-MANIFEST-003)
+# Test 3: plugin.json version equals "0.2.1"  (REQ-MANIFEST-003)
 # ---------------------------------------------------------------------------
-@test "manifest: plugin.json version equals '0.2.0'" {
+@test "manifest: plugin.json version equals '0.2.1'" {
   local version
   version="$(jq -r '.version' "$REPO_ROOT/.claude-plugin/plugin.json")"
-  [ "$version" = "0.2.0" ]
+  [ "$version" = "0.2.1" ]
 }
 
 # ---------------------------------------------------------------------------

@@ -51,24 +51,24 @@ resolved path):
 jq -s '
   group_by(.tool_use_id)
   | map(
-      (.[] | select(.status=="running")) as $seed
-      | (.[] | select(.status=="failed")) as $fail
-      | (.[] | select(.status=="done"))   as $ok
+      (first(.[] | select(.status == "running")) // null) as $seed
+      | (first(.[] | select(.status == "failed")) // null) as $fail
+      | (first(.[] | select(.status == "done"))   // null) as $ok
       | ($fail // $ok // $seed) as $final
       | {
-          session_id:     ($seed.session_id     // $final.session_id),
-          tool_use_id:    ($seed.tool_use_id    // $final.tool_use_id),
-          subagent_type:  ($seed.subagent_type  // null),
-          description:    ($seed.description    // null),
-          prompt:         ($seed.prompt         // null),
-          started:        ($seed.started        // null),
-          ended:          ($final.ended         // null),
-          duration_ms:    ($final.duration_ms   // null),
-          status:         ($final.status        // "running"),
-          total_cost_usd: ($final.total_cost_usd // null),
-          usage:          ($final.usage          // null),
-          response:       ($final.response       // null),
-          cwd:            ($seed.cwd            // null)
+          session_id:     (($seed // {}).session_id     // ($final // {}).session_id),
+          tool_use_id:    (($seed // {}).tool_use_id    // ($final // {}).tool_use_id),
+          subagent_type:  (($seed // {}).subagent_type  // null),
+          description:    (($seed // {}).description    // null),
+          prompt:         (($seed // {}).prompt         // null),
+          started:        (($seed // {}).started        // null),
+          ended:          (($final // {}).ended         // null),
+          duration_ms:    (($final // {}).duration_ms   // null),
+          status:         (($final // {}).status        // "running"),
+          total_cost_usd: (($final // {}).total_cost_usd // null),
+          usage:          (($final // {}).usage          // null),
+          response:       (($final // {}).response       // null),
+          cwd:            (($seed // {}).cwd            // null)
         }
     )
   | sort_by(.started // "")

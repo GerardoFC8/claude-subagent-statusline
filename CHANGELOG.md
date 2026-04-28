@@ -7,6 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.1] — 2026-04-28
+
+### Fixed
+
+- **`/subagents` jq fold pipeline — null-binding collapse bug**: The Step 2 pipeline used
+  `(.[] | select(.status == "X")) as $name` for each of `running`, `failed`, and `done`.
+  When a `tool_use_id` group had no entry for a given status (e.g. a successful delegation
+  has running + done but no failed), jq returned empty from `select`, which silently collapsed
+  the entire surrounding `map` path and produced `[]` for that group. The rendered table showed
+  `?` for Type and Description for those entries (the success-path majority). Fixed by replacing
+  every bare select binding with `(first(.[] | select(.status == "X")) // null) as $name` and
+  guarding all downstream field accesses with `($var // {}).field` to tolerate null bindings
+  without further errors.
+
+---
+
 ## [0.2.0] — 2026-04-28
 
 ### Added

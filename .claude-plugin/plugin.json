@@ -1,7 +1,7 @@
 {
   "name": "claude-subagent-statusline",
   "description": "Live statusline for Claude Code showing context window usage and active sub-agent (Task) delegations, with persistent history and /subagents slash command.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "Gerardo Franco",
     "url": "https://github.com/GerardoFC8"
