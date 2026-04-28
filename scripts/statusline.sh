@@ -35,8 +35,8 @@ else                          color=$'\033[31m'
 fi
 reset=$'\033[0m'
 
-# Build 10-cell bar: filled = round(pct / 10) using (pct + 5) / 10 integer arithmetic.
-filled=$(( (pct_int + 5) / 10 ))
+# Build 10-cell bar: filled = floor(pct / 10) per spec (REQ-STATUSLINE-003).
+filled=$(( pct_int / 10 ))
 (( filled > 10 )) && filled=10
 (( filled < 0 ))  && filled=0
 empty=$(( 10 - filled ))
