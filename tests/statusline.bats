@@ -232,3 +232,22 @@ write_jsonl() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"0%"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# Test 16: bar floor boundary — pct=45 must give 4 filled cells, not 5
+#   Spec says floor(pct/10): floor(45/10)=4. A rounding impl gives (45+5)/10=5.
+# ---------------------------------------------------------------------------
+@test "statusline: bar uses floor at pct=45 (4 cells, not 5)" {
+  local payload='{"session_id":"FLOOR45","model":{"display_name":"M"},"context_window":{"used_percentage":45}}'
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+
+  local plain
+  plain="$(printf '%s' "$output" | sed 's/\x1b\[[0-9;]*m//g')"
+
+  local filled empty
+  filled="$(printf '%s' "$plain" | grep -o '█' | wc -l)"
+  empty="$(printf '%s' "$plain" | grep -o '░' | wc -l)"
+  [ "$filled" -eq 4 ]
+  [ "$empty"  -eq 6 ]
+}
