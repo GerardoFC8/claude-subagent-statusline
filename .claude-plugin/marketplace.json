@@ -1,0 +1,29 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-subagent-statusline",
+  "description": "Live statusline for Claude Code with sub-agent delegation tracking.",
+  "owner": {
+    "name": "Gerardo Franco",
+    "url": "https://github.com/GerardoFC8"
+  },
+  "plugins": [
+    {
+      "name": "claude-subagent-statusline",
+      "description": "Tracks Task (sub-agent) delegations via PreToolUse and PostToolUse hooks and renders a context-window bar plus running and completed counters.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Gerardo Franco"
+      },
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/GerardoFC8/claude-subagent-statusline",
+      "license": "MIT",
+      "keywords": [
+        "claude-code",
+        "statusline",
+        "subagents",
+        "hooks"
+      ]
+    }
+  ]
+}
