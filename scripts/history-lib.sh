@@ -4,18 +4,26 @@
 # Provides: history_path, history_append, history_trim_if_needed.
 # All functions degrade silently and never return non-zero in a way that propagates.
 
-# Resolve history file path:
-#   1. ${CLAUDE_PLUGIN_DATA}/history.jsonl  if env set and non-empty
-#   2. ${HOME}/.claude/state/delegation-history.jsonl  fallback
+# Resolve history file path — three-tier priority:
+#   1. ${CLAUDE_PLUGIN_DATA}/history.jsonl          if env set (hook subprocesses)
+#   2. ${HOME}/.claude/plugins/data/claude-subagent-statusline-claude-subagent-statusline/history.jsonl
+#                                                   per-plugin data convention (slash commands, external)
+#   3. ${HOME}/.claude/state/delegation-history.jsonl   legacy fallback
+#
+# For WRITEs (hooks): mkdir -p is handled by history_append before the write.
+# For path 2: Claude Code creates the dir at install time, but mkdir -p is defensive and harmless.
+HISTORY_CONVENTION_DIR="${HOME}/.claude/plugins/data/claude-subagent-statusline-claude-subagent-statusline"
+
 history_path() {
-  local base
   if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]]; then
-    base="${CLAUDE_PLUGIN_DATA}"
-    printf '%s/history.jsonl\n' "$base"
-  else
-    base="${HOME}/.claude/state"
-    printf '%s/delegation-history.jsonl\n' "$base"
+    printf '%s/history.jsonl\n' "${CLAUDE_PLUGIN_DATA}"
+    return
   fi
+  if [[ -d "${HISTORY_CONVENTION_DIR}" ]]; then
+    printf '%s/history.jsonl\n' "${HISTORY_CONVENTION_DIR}"
+    return
+  fi
+  printf '%s/.claude/state/delegation-history.jsonl\n' "${HOME}"
 }
 
 # history_append <one-line-json>

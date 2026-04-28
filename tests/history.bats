@@ -249,6 +249,47 @@ load helpers
 # Prompt round-trip (REQ-HISTORY-006)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# v0.3.1 — Convention path (fix/render-subagents-path-resolution)
+# REQ-HISTORY-PATH-001: history_path uses convention path when CLAUDE_PLUGIN_DATA unset
+# REQ-HISTORY-PATH-002: history_path uses CLAUDE_PLUGIN_DATA when set
+# REQ-HISTORY-PATH-003: history_path falls back to legacy path when convention dir absent
+# ---------------------------------------------------------------------------
+
+@test "history-lib: history_path returns CLAUDE_PLUGIN_DATA path when env set" {
+  export CLAUDE_PLUGIN_DATA="$BATS_TEST_TMPDIR/plugindata"
+  local path
+  # shellcheck disable=SC1091
+  path="$(source "$REPO_ROOT/scripts/history-lib.sh" && history_path)"
+  [ "$path" = "$BATS_TEST_TMPDIR/plugindata/history.jsonl" ]
+}
+
+@test "history-lib: history_path returns convention path when CLAUDE_PLUGIN_DATA unset" {
+  unset CLAUDE_PLUGIN_DATA
+  # Simulate convention dir existing (as Claude Code creates it at install time)
+  local convention_dir
+  convention_dir="$HOME/.claude/plugins/data/claude-subagent-statusline-claude-subagent-statusline"
+  mkdir -p "$convention_dir"
+
+  local path
+  # shellcheck disable=SC1091
+  path="$(source "$REPO_ROOT/scripts/history-lib.sh" && history_path)"
+  [ "$path" = "$convention_dir/history.jsonl" ]
+}
+
+@test "history-lib: history_path returns legacy fallback when convention dir absent" {
+  unset CLAUDE_PLUGIN_DATA
+  # Do NOT create convention dir — it must not exist
+  # HOME is already scoped to BATS_TEST_TMPDIR/home which has only .claude/state
+  # Remove convention dir if somehow it exists
+  rm -rf "$HOME/.claude/plugins" 2>/dev/null || true
+
+  local path
+  # shellcheck disable=SC1091
+  path="$(source "$REPO_ROOT/scripts/history-lib.sh" && history_path)"
+  [ "$path" = "$HOME/.claude/state/delegation-history.jsonl" ]
+}
+
 @test "history: prompt with newlines and quotes round-trips via jq" {
   unset CLAUDE_PLUGIN_DATA
 

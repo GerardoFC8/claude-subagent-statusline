@@ -11,12 +11,29 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------------------
-# Resolve history file path (mirrors history-lib.sh logic).
+# Resolve history file path — three-tier priority (mirrors history-lib.sh).
+#   1. ${CLAUDE_PLUGIN_DATA}/history.jsonl          if env set (hook subprocesses)
+#   2. ~/.claude/plugins/data/<plugin-id>/history.jsonl  per-plugin convention
+#   3. ~/.claude/state/delegation-history.jsonl         legacy fallback
+# For READs: use the first path that exists and is non-empty.
 # ---------------------------------------------------------------------------
+_HISTORY_CONVENTION="${HOME}/.claude/plugins/data/claude-subagent-statusline-claude-subagent-statusline/history.jsonl"
+_HISTORY_LEGACY="${HOME}/.claude/state/delegation-history.jsonl"
+
 if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]]; then
   HISTORY_FILE="${CLAUDE_PLUGIN_DATA}/history.jsonl"
+elif [[ -s "${_HISTORY_CONVENTION}" ]]; then
+  HISTORY_FILE="${_HISTORY_CONVENTION}"
+elif [[ -s "${_HISTORY_LEGACY}" ]]; then
+  HISTORY_FILE="${_HISTORY_LEGACY}"
 else
-  HISTORY_FILE="${HOME}/.claude/state/delegation-history.jsonl"
+  # No path has data — pick convention dir if it exists, else legacy.
+  # The empty-state check below will handle the "no file / empty file" case.
+  if [[ -d "${HOME}/.claude/plugins/data/claude-subagent-statusline-claude-subagent-statusline" ]]; then
+    HISTORY_FILE="${_HISTORY_CONVENTION}"
+  else
+    HISTORY_FILE="${_HISTORY_LEGACY}"
+  fi
 fi
 
 # ANSI escape codes
