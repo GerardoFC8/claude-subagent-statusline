@@ -1,0 +1,19 @@
+{
+  "name": "claude-subagent-statusline",
+  "description": "Live statusline for Claude Code showing context window usage and active sub-agent (Task) delegations.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Gerardo Franco",
+    "url": "https://github.com/GerardoFC8"
+  },
+  "homepage": "https://github.com/GerardoFC8/claude-subagent-statusline",
+  "repository": "https://github.com/GerardoFC8/claude-subagent-statusline",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "statusline",
+    "subagents",
+    "hooks"
+  ]
+}
