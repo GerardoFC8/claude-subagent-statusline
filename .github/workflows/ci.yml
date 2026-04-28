@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats shellcheck jq
+
+      - name: Validate plugin manifest
+        run: jq -e . .claude-plugin/plugin.json > /dev/null
+
+      - name: Validate hooks declaration
+        run: jq -e . hooks/hooks.json > /dev/null
+
+      - name: Shellcheck scripts
+        run: shellcheck scripts/*.sh
+
+      - name: Run bats tests
+        run: bats tests/
