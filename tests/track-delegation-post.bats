@@ -28,9 +28,11 @@ load helpers
   [ "$(printf '%s' "$line" | jq -r '.id')"     = "toolu_Z" ]
   [ "$(printf '%s' "$line" | jq -r '.status')" = "done"    ]
 
-  local ts
-  ts="$(printf '%s' "$line" | jq -r '.ts // .ended // empty')"
-  [ -n "$ts" ]
+  local ended
+  ended="$(printf '%s' "$line" | jq -r '.ended')"
+  [ -n "$ended" ]
+  # ISO8601 with timezone offset: YYYY-MM-DDTHH:MM:SS+HH:MM or -HH:MM
+  [[ "$ended" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$ ]]
 }
 
 # ---------------------------------------------------------------------------

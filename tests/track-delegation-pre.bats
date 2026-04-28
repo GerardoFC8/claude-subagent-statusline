@@ -21,12 +21,17 @@ load helpers
 
   local line
   line="$(head -1 "$sf")"
+  # id, status
   [ "$(printf '%s' "$line" | jq -r '.id')"     = "toolu_ABC" ]
   [ "$(printf '%s' "$line" | jq -r '.status')" = "running"   ]
-  # ts or started field must be present and non-empty
-  local ts
-  ts="$(printf '%s' "$line" | jq -r '.ts // .started // empty')"
-  [ -n "$ts" ]
+  # spec-mandated field names: type, desc, started (ISO8601 with TZ offset)
+  [ "$(printf '%s' "$line" | jq -r '.type')"   = "sdd-spec"  ]
+  [ "$(printf '%s' "$line" | jq -r '.desc')"   = "Write spec" ]
+  local started
+  started="$(printf '%s' "$line" | jq -r '.started')"
+  [ -n "$started" ]
+  # ISO8601 with timezone offset: YYYY-MM-DDTHH:MM:SS+HH:MM or -HH:MM
+  [[ "$started" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$ ]]
 }
 
 # ---------------------------------------------------------------------------
@@ -78,7 +83,7 @@ load helpers
 # ---------------------------------------------------------------------------
 # Test 6: missing subagent_type — still writes, subagent_type is empty string
 # ---------------------------------------------------------------------------
-@test "pre: missing subagent_type — writes line with empty subagent_type" {
+@test "pre: missing subagent_type — writes line with empty type" {
   local payload='{"tool_use_id":"toolu_NOSA","session_id":"S_NOSA"}'
   run run_pre "$payload"
   [ "$status" -eq 0 ]
@@ -89,12 +94,12 @@ load helpers
 
   local line
   line="$(head -1 "$sf")"
-  [ "$(printf '%s' "$line" | jq -r '.id')"            = "toolu_NOSA" ]
-  [ "$(printf '%s' "$line" | jq -r '.status')"        = "running"    ]
-  # subagent_type may be empty string or absent/null — both acceptable
-  local sa
-  sa="$(printf '%s' "$line" | jq -r '.subagent_type // ""')"
-  [ "$sa" = "" ] || [ "$sa" = "null" ]
+  [ "$(printf '%s' "$line" | jq -r '.id')"     = "toolu_NOSA" ]
+  [ "$(printf '%s' "$line" | jq -r '.status')" = "running"    ]
+  # type field must be present; empty string when subagent_type absent
+  local tp
+  tp="$(printf '%s' "$line" | jq -r '.type // ""')"
+  [ "$tp" = "" ]
 }
 
 # ---------------------------------------------------------------------------

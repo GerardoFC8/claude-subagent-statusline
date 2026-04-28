@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # scripts/track-delegation-post.sh
-# PostToolUse hook — appends a "done" entry to the per-session JSONL state file.
+# PostToolUse hook — appends a spec-compliant "done" entry to the per-session JSONL state file.
+# Line shape: {"id","ended"(ISO8601+TZ),"status":"done"}
 # MUST exit 0 in ALL cases (Claude Code blocks the host turn on non-zero hook exit).
 
 set -uo pipefail
@@ -24,11 +25,12 @@ state_file="${state_dir}/delegations-${session_id}.jsonl"
 # does not exist (means the pre-hook never fired for this session).
 [[ -r "$state_file" ]] || exit 0
 
-ts="$(date +%s)"
+# ISO8601 with second precision and timezone offset (e.g. 2026-04-28T10:18:24-03:00).
+ended="$(date -Iseconds)"
 line="$(jq -cn \
-  --arg id     "$tool_use_id" \
-  --argjson ts "$ts" \
-  '{id: $id, status: "done", ts: $ts}')"
+  --arg id    "$tool_use_id" \
+  --arg ended "$ended" \
+  '{id: $id, ended: $ended, status: "done"}')"
 
 # Single printf append — atomic for lines < PIPE_BUF (4096 bytes).
 printf '%s\n' "$line" >> "$state_file" 2>/dev/null || true
