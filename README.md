@@ -2,15 +2,17 @@
 
 A Claude Code plugin that tracks Task (sub-agent) delegations in real time, renders a live statusline showing your context window usage alongside delegation counts and session elapsed time, and persists a searchable history of every delegation across sessions.
 
-## What's new in v0.3.0
+## What's new in v0.4.0
 
-### Session elapsed time in statusline
+### Always-on `✗ failed` and `⏱` segments
 
-The statusline now shows how long the current Claude Code session has been alive (`⏱ Xm Ys`), computed from the oldest delegation started in this session. The previous in-flight winner (`▶`) and stale prefix (`⚠`) have been removed — long-running agents are normal, and the 30-minute stale marker was misleading.
+Both segments now render unconditionally — `✗ 0 failed` even when there are no failures, and `⏱ 0s` from the very first statusline call, even before any sub-agent has been dispatched.
 
-**v0.3.0 statusline format:**
+To achieve `⏱` before the first delegation, the script persists a session-start epoch to `~/.claude/state/session-start-<session_id>` on first run and uses it as the elapsed baseline when no JSONL entries carry a `started` field.
+
+**v0.4.0 statusline format (always complete):**
 ```
-[Opus 4.7] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done │ ⏱ 14m 32s
+[Opus 4.7] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed │ ⏱ 14m 32s
 ```
 
 With failures:
@@ -65,7 +67,7 @@ The counter file (for the statusline) remains at `~/.claude/state/delegations-<s
 ## Preview
 
 ```
-[Opus 4.7] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done │ ⏱ 14m 32s
+[Opus 4.7] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed │ ⏱ 14m 32s
 ```
 
 The bar is 10 cells wide and color-coded: green below 50%, yellow 50–79%, red 80%+.

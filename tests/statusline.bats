@@ -285,13 +285,29 @@ jsonl_running_ago() {
   [[ "$output" == *"1m"* ]]
 }
 
-@test "statusline: omits session elapsed when counter file is empty" {
-  # No state file for this session — elapsed segment must not appear
-  local payload='{"session_id":"ELAP2","model":{"display_name":"M"},"context_window":{"used_percentage":20}}'
+@test "statusline: shows ⏱ even when JSONL is empty (uses persisted session-start)" {
+  # No state file — but session-start file is seeded on first run.
+  # Use a fresh session id to avoid cross-test bleed from persisted session-start files.
+  local sid="ELAP_EMPTY"
+  rm -f "$HOME/.claude/state/session-start-${sid}"
+
+  local payload="{\"session_id\":\"${sid}\",\"model\":{\"display_name\":\"M\"},\"context_window\":{\"used_percentage\":20}}"
+
+  # First run seeds the session-start file.
   run run_statusline "$payload"
   [ "$status" -eq 0 ]
+  # ⏱ must appear even with no JSONL (baseline = seeded session-start).
+  [[ "$output" == *"⏱"* ]]
 
-  [[ "$output" != *"⏱"* ]]
+  # Second run after a 1-second gap — elapsed should still appear and contain "s".
+  sleep 1
+  run run_statusline "$payload"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"⏱"* ]]
+  [[ "$output" == *"s"* ]]
+
+  # Cleanup persisted seed.
+  rm -f "$HOME/.claude/state/session-start-${sid}"
 }
 
 @test "statusline: session elapsed uses oldest started, not newest" {
@@ -399,7 +415,7 @@ jsonl_running_ago() {
   [[ "$output" == *"1 failed"* ]]
 }
 
-@test "statusline: no ✗ segment when F=0" {
+@test "statusline: shows ✗ 0 failed when F=0 (always-on segment)" {
   local sf
   sf="$(state_file_for FAIL0)"
   local started
@@ -411,7 +427,8 @@ jsonl_running_ago() {
   run run_statusline "$payload"
   [ "$status" -eq 0 ]
 
-  [[ "$output" != *"✗"* ]]
+  # v0.4.0: ✗ segment is always rendered, even when F=0.
+  [[ "$output" == *"✗ 0 failed"* ]]
 }
 
 @test "statusline: failed entries excluded from running count" {
@@ -458,18 +475,25 @@ jsonl_running_ago() {
   [[ "$output" != *"▶"* ]]
 }
 
-@test "statusline: regression — empty counter output identical to v0.1 format" {
-  # No state file — output must match v0.1 baseline (no ▶, no ✗)
-  local payload='{"session_id":"REG1","model":{"display_name":"TestModel"},"context_window":{"used_percentage":30}}'
+@test "statusline: regression — v0.4.0 baseline always includes ✗ and ⏱ segments" {
+  # No JSONL state file — v0.4.0 still renders ✗ 0 failed and ⏱ (from seeded session-start).
+  local sid="REG1"
+  rm -f "$HOME/.claude/state/session-start-${sid}"
+
+  local payload="{\"session_id\":\"${sid}\",\"model\":{\"display_name\":\"TestModel\"},\"context_window\":{\"used_percentage\":30}}"
   run run_statusline "$payload"
   [ "$status" -eq 0 ]
 
-  # v0.1-compatible assertions
+  # Core segments must still render.
   [[ "$output" == *"[TestModel]"* ]]
   [[ "$output" == *"30%"* ]]
   [[ "$output" == *"0 running"* ]]
   [[ "$output" == *"0 done"* ]]
-  # No in-flight or failed segments
+  # v0.4.0: ✗ and ⏱ are always-on — no longer absent in the baseline.
+  [[ "$output" == *"✗ 0 failed"* ]]
+  [[ "$output" == *"⏱"* ]]
+  # In-flight (▶) must still be absent.
   [[ "$output" != *"▶"* ]]
-  [[ "$output" != *"✗"* ]]
+
+  rm -f "$HOME/.claude/state/session-start-${sid}"
 }

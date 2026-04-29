@@ -10,7 +10,7 @@
     {
       "name": "claude-subagent-statusline",
       "description": "Tracks Task (sub-agent) delegations via PreToolUse and PostToolUse hooks and renders a context-window bar plus running and completed counters.",
-      "version": "0.1.0",
+      "version": "0.4.0",
       "author": {
         "name": "Gerardo Franco"
       },
