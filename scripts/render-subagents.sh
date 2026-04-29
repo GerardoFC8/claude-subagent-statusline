@@ -2,8 +2,10 @@
 # scripts/render-subagents.sh
 # Token-free renderer for /subagents slash command.
 # Usage:
-#   render-subagents.sh              → table of last 20 delegations
-#   render-subagents.sh <N>          → table of last N delegations (cap 100)
+#   render-subagents.sh              → table of last 20 delegations (current session)
+#   render-subagents.sh <N>          → table of last N delegations (current session, cap 100)
+#   render-subagents.sh all          → table of last 20 delegations (all sessions)
+#   render-subagents.sh all <N>      → table of last N delegations (all sessions, cap 100)
 #   render-subagents.sh stats [SID]  → per-session stats block
 # ANSI colors: green=done, red=failed, yellow=running.
 # Exits 0 in all cases.
@@ -51,11 +53,12 @@ if [[ ! -f "$HISTORY_FILE" || ! -s "$HISTORY_FILE" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Parse argument: default=table/20, stats, or N
+# Parse argument: default=table/20 (current session), stats, all, or N
 # ---------------------------------------------------------------------------
 mode="table"
 table_n=20
 session_filter=""
+show_all=0
 
 arg1="${1:-}"
 arg2="${2:-}"
@@ -63,6 +66,14 @@ arg2="${2:-}"
 if [[ "$arg1" == "stats" ]]; then
   mode="stats"
   session_filter="$arg2"
+elif [[ "$arg1" == "all" ]]; then
+  mode="table"
+  show_all=1
+  if [[ "$arg2" =~ ^[0-9]+$ ]]; then
+    table_n="$arg2"
+    (( table_n > 100 )) && table_n=100
+    (( table_n < 1  )) && table_n=1
+  fi
 elif [[ "$arg1" =~ ^[0-9]+$ ]]; then
   mode="table"
   table_n="$arg1"
@@ -162,20 +173,24 @@ trunc() {
   fi
 }
 
-# format_tokens <usage_json>
-format_tokens() {
-  local usage="$1"
+# format_token_field <usage_json> <field_name>
+# Extracts usage.<field> and formats: >=10000 → "NNN.Nk", <10000 → raw int, null/missing → "—"
+format_token_field() {
+  local usage="$1" field="$2"
   if [[ -z "$usage" || "$usage" == "null" ]]; then
     printf '—'
     return
   fi
-  local it ot
-  it="$(printf '%s' "$usage" | jq -r '.input_tokens // empty' 2>/dev/null)"
-  ot="$(printf '%s' "$usage" | jq -r '.output_tokens // empty' 2>/dev/null)"
-  if [[ -z "$it" && -z "$ot" ]]; then
+  local val
+  val="$(printf '%s' "$usage" | jq -r --arg f "$field" '.[$f] // empty' 2>/dev/null)"
+  if [[ -z "$val" ]]; then
     printf '—'
+    return
+  fi
+  if (( val >= 10000 )); then
+    printf '%.1fk' "$(echo "scale=1; $val / 1000" | bc)"
   else
-    printf '%s/%s' "${it:-0}" "${ot:-0}"
+    printf '%s' "$val"
   fi
 }
 
@@ -193,19 +208,44 @@ color_status() {
 # Mode: table
 # ---------------------------------------------------------------------------
 if [[ "$mode" == "table" ]]; then
+
+  # Apply session filter unless show_all=1
+  if [[ "$show_all" -eq 0 ]]; then
+    # Resolve current session_id:
+    # 1. CLAUDE_SESSION_ID env var (Claude Code may expose it)
+    # 2. Heuristic: session_id of the most recent entry in folded history
+    current_sid=""
+    env_sid="$(printenv CLAUDE_SESSION_ID 2>/dev/null || true)"
+    if [[ -n "$env_sid" ]]; then
+      current_sid="$env_sid"
+    else
+      current_sid="$(printf '%s' "$folded" | jq -r '.[0].session_id // empty' 2>/dev/null)"
+    fi
+
+    if [[ -n "$current_sid" && "$current_sid" != "null" ]]; then
+      folded="$(printf '%s' "$folded" | jq --arg sid "$current_sid" \
+        '[.[] | select(.session_id == $sid)]' 2>/dev/null)"
+    fi
+
+    if [[ -z "$folded" || "$folded" == "[]" || "$folded" == "null" ]]; then
+      printf 'No delegations in this session yet.\n'
+      exit 0
+    fi
+  fi
+
   # Take first N entries (already sorted newest-first by fold).
   entries="$(printf '%s' "$folded" | jq --argjson n "$table_n" '.[:$n]' 2>/dev/null)"
 
   entry_count="$(printf '%s' "$entries" | jq 'length' 2>/dev/null)" || entry_count=0
   if [[ "$entry_count" -eq 0 ]]; then
-    printf 'No delegations recorded yet.\n'
+    printf 'No delegations in this session yet.\n'
     exit 0
   fi
 
-  # Print table header
-  printf '| %-3s | %-11s | %-16s | %-40s | %-7s | %-8s | %-9s |\n' \
-    "#" "When" "Type" "Description (≤40)" "Status" "Duration" "Tokens"
-  printf '|-----|-------------|------------------|------------------------------------------|---------|----------|----------|\n'
+  # Print table header — 4 token columns: Input, CacheR, CacheW, Output
+  printf '| %-3s | %-11s | %-16s | %-40s | %-7s | %-8s | %-7s | %-7s | %-7s | %-7s |\n' \
+    "#" "When" "Type" "Description (≤40)" "Status" "Duration" "Input" "CacheR" "CacheW" "Output"
+  printf '|-----|-------------|------------------|------------------------------------------|---------|----------|---------|---------|---------|---------|\n'
 
   # Print rows
   local_idx=0
@@ -220,13 +260,17 @@ if [[ "$mode" == "table" ]]; then
 
     when_str="$(humanize "$s_started")"
     dur_str="$(format_duration "${s_dur:-}")"
-    tok_str="$(format_tokens "$s_usage")"
+    tok_in="$(format_token_field  "$s_usage" "input_tokens")"
+    tok_cr="$(format_token_field  "$s_usage" "cache_read_input_tokens")"
+    tok_cw="$(format_token_field  "$s_usage" "cache_creation_input_tokens")"
+    tok_out="$(format_token_field "$s_usage" "output_tokens")"
     desc_str="$(trunc "$s_desc" 40)"
     type_str="$(trunc "$s_type" 16)"
     status_colored="$(color_status "$s_status")"
 
-    printf '| %-3s | %-11s | %-16s | %-40s | %s | %-8s | %-9s |\n' \
-      "$local_idx" "$when_str" "$type_str" "$desc_str" "$status_colored" "$dur_str" "$tok_str"
+    printf '| %-3s | %-11s | %-16s | %-40s | %s | %-8s | %-7s | %-7s | %-7s | %-7s |\n' \
+      "$local_idx" "$when_str" "$type_str" "$desc_str" "$status_colored" "$dur_str" \
+      "$tok_in" "$tok_cr" "$tok_cw" "$tok_out"
   done < <(printf '%s' "$entries" | jq -c '.[]' 2>/dev/null)
 
   # shellcheck disable=SC2016
@@ -258,20 +302,30 @@ if [[ "$mode" == "stats" ]]; then
     exit 0
   fi
 
-  # Compute stats via jq
+  # Compute stats via jq — sum ALL FOUR token fields for honest totals
   stats_json="$(printf '%s' "$session_data" | jq '
     (group_by(.subagent_type // "?") | map({
         type:   (.[0].subagent_type // "?"),
         count:  length,
         avg_ms: ((map(.duration_ms // 0) | add) / length),
-        tokens: (map((.usage.input_tokens // 0) + (.usage.output_tokens // 0)) | add)
+        tokens: (map(
+          (.usage.input_tokens // 0)
+          + (.usage.cache_read_input_tokens // 0)
+          + (.usage.cache_creation_input_tokens // 0)
+          + (.usage.output_tokens // 0)
+        ) | add)
       })) as $by_type
     | {
         total:   length,
         by_type: $by_type,
         totals: {
           avg_ms:  ((map(.duration_ms // 0) | add) / (length | if . == 0 then 1 else . end)),
-          tokens:  (map((.usage.input_tokens // 0) + (.usage.output_tokens // 0)) | add),
+          tokens:  (map(
+            (.usage.input_tokens // 0)
+            + (.usage.cache_read_input_tokens // 0)
+            + (.usage.cache_creation_input_tokens // 0)
+            + (.usage.output_tokens // 0)
+          ) | add),
           failed:  (map(select(.status == "failed")) | length)
         }
       }
