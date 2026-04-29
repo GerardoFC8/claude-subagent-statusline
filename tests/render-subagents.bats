@@ -5,7 +5,7 @@ load helpers
 
 RENDERER="$REPO_ROOT/scripts/render-subagents.sh"
 
-# Helper: write a history entry for a completed delegation
+# Helper: write a history entry for a completed delegation (all 4 token fields)
 write_history_done() {
   local hf tool_use_id session_id subagent_type description started ended duration_ms input_tokens output_tokens
   hf="$(history_file_for)"
@@ -34,6 +34,44 @@ write_history_done() {
     '{session_id:$sid, tool_use_id:$tid, ended:$ended, duration_ms:$dms,
       status:"done", total_cost_usd:null,
       usage:{input_tokens:$it, output_tokens:$ot}, response:null}' >> "$hf"
+}
+
+# Helper: write a history entry with all 4 token fields
+write_history_done_full_tokens() {
+  local hf tool_use_id session_id subagent_type description started ended duration_ms \
+        input_tokens cache_read cache_creation output_tokens
+  hf="$(history_file_for)"
+  tool_use_id="$1"
+  session_id="$2"
+  subagent_type="$3"
+  description="$4"
+  started="$5"
+  ended="$6"
+  duration_ms="$7"
+  input_tokens="$8"
+  cache_read="$9"
+  cache_creation="${10}"
+  output_tokens="${11}"
+
+  # Seed entry (running)
+  jq -cn \
+    --arg sid "$session_id" --arg tid "$tool_use_id" --arg st "$subagent_type" \
+    --arg desc "$description" --arg started "$started" \
+    '{session_id:$sid, tool_use_id:$tid, subagent_type:$st, description:$desc,
+      prompt:"test prompt", started:$started, ended:null, duration_ms:null,
+      status:"running", total_cost_usd:null, usage:null, cwd:"/tmp"}' >> "$hf"
+
+  # Finalization entry (done) with all 4 fields
+  jq -cn \
+    --arg sid "$session_id" --arg tid "$tool_use_id" --arg ended "$ended" \
+    --argjson dms "$duration_ms" \
+    --argjson it "$input_tokens" --argjson cr "$cache_read" \
+    --argjson cw "$cache_creation" --argjson ot "$output_tokens" \
+    '{session_id:$sid, tool_use_id:$tid, ended:$ended, duration_ms:$dms,
+      status:"done", total_cost_usd:null,
+      usage:{input_tokens:$it, cache_read_input_tokens:$cr,
+             cache_creation_input_tokens:$cw, output_tokens:$ot},
+      response:null}' >> "$hf"
 }
 
 # Helper: write a failed history entry (only seed, no finalization — simulates pre-hook + fail hook)
@@ -96,25 +134,30 @@ write_history_running() {
 }
 
 # ---------------------------------------------------------------------------
-# Test 2: 3 entries → table with 3 rows + headers
+# Test 2: 3 entries (same session) → table with 4 token column headers + 3 rows
 # ---------------------------------------------------------------------------
-@test "render-subagents: 3 done entries render table with headers and 3 rows" {
+@test "render-subagents: 3 done entries render table with 4 token column headers and 3 rows" {
   local ts
   ts="$(date -Iseconds)"
   write_history_done "toolu_1" "SES_A" "sdd-spec"   "Write spec for auth"    "$ts" "$ts" 72000  3200 8400
   write_history_done "toolu_2" "SES_A" "sdd-design"  "Lock contracts"         "$ts" "$ts" 18000  1200 2800
   write_history_done "toolu_3" "SES_A" "sdd-apply"   "Implement auth module"  "$ts" "$ts" 120000 5000 12000
 
-  run "$RENDERER"
+  run env CLAUDE_SESSION_ID="SES_A" "$RENDERER"
   [ "$status" -eq 0 ]
 
-  # Table headers
+  # Table headers — 4 token columns instead of old single "Tokens"
   [[ "$output" == *"| #"* ]]
   [[ "$output" == *"Type"* ]]
   [[ "$output" == *"Description"* ]]
   [[ "$output" == *"Status"* ]]
   [[ "$output" == *"Duration"* ]]
-  [[ "$output" == *"Tokens"* ]]
+  [[ "$output" == *"Input"* ]]
+  [[ "$output" == *"CacheR"* ]]
+  [[ "$output" == *"CacheW"* ]]
+  [[ "$output" == *"Output"* ]]
+  # Old single "Tokens" column must NOT appear
+  [[ "$output" != *"| Tokens"* ]]
 
   # 3 entries must appear (numbered 1 2 3)
   [[ "$output" == *"| 1 "* ]] || [[ "$output" == *"| 1|"* ]] || [[ "$output" == *" 1 |"* ]]
@@ -150,7 +193,7 @@ write_history_running() {
   ts="$(date -Iseconds)"
   hf="$(history_file_for)"
 
-  # Write 110 entries
+  # Write 110 entries all in the same session
   for i in $(seq 1 110); do
     jq -cn \
       --arg tid "toolu_cap_${i}" --arg sid "SES_CAP" --arg idx "$i" \
@@ -160,7 +203,7 @@ write_history_running() {
         total_cost_usd:null, usage:{input_tokens:100, output_tokens:200}, response:null}' >> "$hf"
   done
 
-  run "$RENDERER" "99999"
+  run env CLAUDE_SESSION_ID="SES_CAP" "$RENDERER" "99999"
   [ "$status" -eq 0 ]
 
   # Count rows (lines containing "| N " pattern — must be ≤ 100)
@@ -180,7 +223,7 @@ write_history_running() {
   # Only write a done delegation — no failed entry for this tool_use_id
   write_history_done "toolu_success" "SES_REG" "sdd-spec" "Write spec for X" "$ts" "$ts" 30000 500 1000
 
-  run "$RENDERER"
+  run env CLAUDE_SESSION_ID="SES_REG" "$RENDERER"
   [ "$status" -eq 0 ]
 
   # The entry must appear in the table, not be collapsed
@@ -198,7 +241,7 @@ write_history_running() {
   ts="$(date -Iseconds)"
   write_history_running "toolu_run" "SES_RUN" "general-purpose" "Ongoing task" "$ts"
 
-  run "$RENDERER"
+  run env CLAUDE_SESSION_ID="SES_RUN" "$RENDERER"
   [ "$status" -eq 0 ]
 
   [[ "$output" == *"general-purpose"* ]]
@@ -215,7 +258,7 @@ write_history_running() {
   write_history_done "toolu_n2" "SES_N" "sdd-design"  "Task two"   "$ts" "$ts" 20000 200 400
   write_history_done "toolu_n3" "SES_N" "sdd-apply"   "Task three" "$ts" "$ts" 30000 300 600
 
-  run "$RENDERER" "2"
+  run env CLAUDE_SESSION_ID="SES_N" "$RENDERER" "2"
   [ "$status" -eq 0 ]
 
   # Should have rows 1 and 2 but NOT 3
@@ -244,7 +287,7 @@ write_history_running() {
       total_cost_usd:null, usage:{input_tokens:100, output_tokens:200}, response:null}' \
     >> "$custom_dir/history.jsonl"
 
-  run "$RENDERER"
+  run env CLAUDE_SESSION_ID="SES_CPD" "$RENDERER"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Custom path test"* ]]
 }
@@ -275,7 +318,7 @@ write_history_running() {
 
   # Legacy path must be absent or empty (clean HOME already has no file there)
 
-  run "$RENDERER"
+  run env CLAUDE_SESSION_ID="SES_CONV" "$RENDERER"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Convention path delegation"* ]]
 }
@@ -307,7 +350,7 @@ write_history_running() {
       total_cost_usd:null, usage:{input_tokens:10, output_tokens:20}, response:null}' \
     >> "$convention_dir/history.jsonl"
 
-  run "$RENDERER"
+  run env CLAUDE_SESSION_ID="SES_ENV" "$RENDERER"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Env path delegation"* ]]
   [[ "$output" != *"Should not appear"* ]]
@@ -329,7 +372,173 @@ write_history_running() {
       total_cost_usd:null, usage:{input_tokens:200, output_tokens:400}, response:null}' \
     >> "$legacy_file"
 
-  run "$RENDERER"
+  run env CLAUDE_SESSION_ID="SES_LEG" "$RENDERER"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Legacy path delegation"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# v0.5.0 — Session filter tests
+# ---------------------------------------------------------------------------
+
+@test "render-subagents: default table shows only current session entries (CLAUDE_SESSION_ID)" {
+  local ts
+  ts="$(date -Iseconds)"
+  # Session A (old session)
+  write_history_done "toolu_old1" "SES_OLD" "sdd-spec"   "Old session task one"   "$ts" "$ts" 10000 100 200
+  write_history_done "toolu_old2" "SES_OLD" "sdd-design" "Old session task two"   "$ts" "$ts" 20000 200 400
+  # Session B (current session)
+  write_history_done "toolu_cur1" "SES_CUR" "sdd-apply"  "Current session task"   "$ts" "$ts" 30000 300 600
+
+  # Set CLAUDE_SESSION_ID to the current session
+  run env CLAUDE_SESSION_ID="SES_CUR" "$RENDERER"
+  [ "$status" -eq 0 ]
+
+  # Current session entry must appear
+  [[ "$output" == *"Current session task"* ]]
+  # Old session entries must NOT appear
+  [[ "$output" != *"Old session task one"* ]]
+  [[ "$output" != *"Old session task two"* ]]
+}
+
+@test "render-subagents: default table uses heuristic (most recent session) when CLAUDE_SESSION_ID unset" {
+  local ts
+  ts="$(date -Iseconds)"
+  local hf
+  hf="$(history_file_for)"
+
+  # Write old session entry with an older timestamp
+  jq -cn \
+    --arg tid "toolu_heur_old" --arg sid "SES_HEUR_OLD" \
+    '{session_id:$sid, tool_use_id:$tid, subagent_type:"sdd-spec",
+      description:"Heuristic old session", prompt:"p",
+      started:"2024-01-01T10:00:00+00:00",
+      ended:"2024-01-01T10:01:00+00:00", duration_ms:60000, status:"done",
+      total_cost_usd:null, usage:{input_tokens:100, output_tokens:200}, response:null}' >> "$hf"
+
+  # Write new session entry with a newer timestamp (will sort first after fold)
+  jq -cn \
+    --arg tid "toolu_heur_new" --arg sid "SES_HEUR_NEW" \
+    '{session_id:$sid, tool_use_id:$tid, subagent_type:"sdd-apply",
+      description:"Heuristic new session", prompt:"p",
+      started:"2026-04-29T10:00:00+00:00",
+      ended:"2026-04-29T10:01:00+00:00", duration_ms:30000, status:"done",
+      total_cost_usd:null, usage:{input_tokens:50, output_tokens:100}, response:null}' >> "$hf"
+
+  # CLAUDE_SESSION_ID explicitly unset
+  run env -u CLAUDE_SESSION_ID "$RENDERER"
+  [ "$status" -eq 0 ]
+
+  # Should show the newest session's entries
+  [[ "$output" == *"Heuristic new session"* ]]
+  # Old session must NOT appear
+  [[ "$output" != *"Heuristic old session"* ]]
+}
+
+@test "render-subagents: 'all' argument shows entries from all sessions" {
+  local ts
+  ts="$(date -Iseconds)"
+  # Two different sessions
+  write_history_done "toolu_all1" "SES_ALPHA" "sdd-spec"  "Alpha session task"   "$ts" "$ts" 10000 100 200
+  write_history_done "toolu_all2" "SES_BETA"  "sdd-apply" "Beta session task"    "$ts" "$ts" 20000 200 400
+
+  run "$RENDERER" "all"
+  [ "$status" -eq 0 ]
+
+  # Both sessions must appear
+  [[ "$output" == *"Alpha session task"* ]]
+  [[ "$output" == *"Beta session task"* ]]
+}
+
+@test "render-subagents: 'all N' argument respects N row limit across all sessions" {
+  local ts
+  ts="$(date -Iseconds)"
+  write_history_done "toolu_lim1" "SES_X" "sdd-spec"   "Task X1" "$ts" "$ts" 10000 100 200
+  write_history_done "toolu_lim2" "SES_X" "sdd-design" "Task X2" "$ts" "$ts" 20000 200 400
+  write_history_done "toolu_lim3" "SES_Y" "sdd-apply"  "Task Y1" "$ts" "$ts" 30000 300 600
+
+  run "$RENDERER" "all" "2"
+  [ "$status" -eq 0 ]
+
+  local row_count
+  row_count="$(printf '%s' "$output" | grep -cE '^\| [0-9]' || true)"
+  [ "$row_count" -eq 2 ]
+}
+
+@test "render-subagents: no matching session entries prints 'No delegations in this session yet'" {
+  local ts
+  ts="$(date -Iseconds)"
+  # Write an entry for a different session
+  write_history_done "toolu_other" "SES_OTHER" "sdd-spec" "Other session task" "$ts" "$ts" 10000 100 200
+
+  # Set CLAUDE_SESSION_ID to a session with no entries
+  run env CLAUDE_SESSION_ID="SES_EMPTY" "$RENDERER"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"No delegations in this session yet."* ]]
+}
+
+# ---------------------------------------------------------------------------
+# v0.5.0 — 4-column token tests
+# ---------------------------------------------------------------------------
+
+@test "render-subagents: 4 token columns render expected values from full usage payload" {
+  local ts
+  ts="$(date -Iseconds)"
+  # input=1, cache_read=55491, cache_creation=807, output=608
+  write_history_done_full_tokens \
+    "toolu_tok4" "SES_TOK" "general-purpose" "Token column test" \
+    "$ts" "$ts" 7000 1 55491 807 608
+
+  run env CLAUDE_SESSION_ID="SES_TOK" "$RENDERER"
+  [ "$status" -eq 0 ]
+
+  # Input = 1 (raw, <10000)
+  [[ "$output" =~ \|[[:space:]]+1[[:space:]]+ ]]
+  # cache_read = 55491 → 55.4k (bc truncates, not rounds)
+  [[ "$output" == *"55.4k"* ]]
+  # cache_creation = 807 (raw, <10000)
+  [[ "$output" == *"807"* ]]
+  # output = 608 (raw, <10000)
+  [[ "$output" == *"608"* ]]
+}
+
+@test "render-subagents: token fields show dash when usage is null" {
+  local ts hf
+  ts="$(date -Iseconds)"
+  hf="$(history_file_for)"
+
+  # Write entry with null usage
+  jq -cn \
+    --arg tid "toolu_null_tok" --arg sid "SES_NULL_TOK" \
+    --arg started "$ts" \
+    '{session_id:$sid, tool_use_id:$tid, subagent_type:"sdd-spec",
+      description:"Null usage test", prompt:"p",
+      started:$started, ended:$started, duration_ms:5000,
+      status:"done", total_cost_usd:null, usage:null, response:null}' >> "$hf"
+
+  run env CLAUDE_SESSION_ID="SES_NULL_TOK" "$RENDERER"
+  [ "$status" -eq 0 ]
+
+  # All 4 token columns should show — (em-dash placeholder)
+  local dash_count
+  dash_count="$(printf '%s' "$output" | grep -oP '—' | wc -l || true)"
+  [ "$dash_count" -ge 4 ]
+}
+
+@test "render-subagents: k-formatting kicks in at 10000 but not at 9999" {
+  local ts
+  ts="$(date -Iseconds)"
+  # Seed: cache_read=10000 → should render as "10.0k", cache_creation=9999 → raw "9999"
+  write_history_done_full_tokens \
+    "toolu_kfmt" "SES_KFMT" "sdd-spec" "K format threshold test" \
+    "$ts" "$ts" 5000 1 10000 9999 1
+
+  run env CLAUDE_SESSION_ID="SES_KFMT" "$RENDERER"
+  [ "$status" -eq 0 ]
+
+  # 10000 → 10.0k
+  [[ "$output" == *"10.0k"* ]]
+  # 9999 → raw (no k suffix)
+  [[ "$output" == *"9999"* ]]
+  [[ "$output" != *"9.9k"* ]]
 }
