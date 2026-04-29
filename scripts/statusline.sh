@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # scripts/statusline.sh
 # Statusline renderer — reads stdin JSON, emits a formatted statusline string.
-# v0.3: adds ⏱ session elapsed (oldest started entry); removes ▶/⚠ in-flight segment.
+# v0.4: ✗ failed and ⏱ elapsed are always rendered; session-start timestamp
+#       persisted to ~/.claude/state/session-start-<session_id> on first run.
 # MUST exit 0 in ALL cases.
 
 set -uo pipefail
@@ -50,8 +51,21 @@ for (( i = 0; i < empty;  i++ )); do bar+="░"; done
 running=0
 done_count=0
 failed_count=0
+oldest_started=""
 elapsed_seg=""
 state_file="${HOME}/.claude/state/delegations-${session_id}.jsonl"
+
+# Persist a session-start timestamp the first time we see this session_id.
+# This is the elapsed baseline when no JSONL entries carry a "started" field.
+session_start_file=""
+if [[ -n "$session_id" ]]; then
+  mkdir -p "${HOME}/.claude/state" 2>/dev/null || true
+  session_start_file="${HOME}/.claude/state/session-start-${session_id}"
+  if [[ ! -f "$session_start_file" ]]; then
+    printf '%s' "$(date +%s)" > "${session_start_file}.tmp" 2>/dev/null && \
+      mv "${session_start_file}.tmp" "$session_start_file" 2>/dev/null || true
+  fi
+fi
 
 if [[ -n "$session_id" && -r "$state_file" ]]; then
   # done set D = distinct ids where any line has status=="done"
@@ -73,33 +87,43 @@ if [[ -n "$session_id" && -r "$state_file" ]]; then
     ($r - $d - $f) | length
   ' "$state_file" 2>/dev/null)" || running=0
 
-  # Session elapsed: time since the oldest entry with a "started" field.
+  # Session elapsed baseline: prefer oldest "started" field in JSONL entries.
   oldest_started="$(jq -rs '
     [.[] | select(.started != null and .started != "") | .started] | sort | .[0] // empty
   ' "$state_file" 2>/dev/null)" || oldest_started=""
-
-  if [[ -n "$oldest_started" ]]; then
-    now_s="$(date +%s)"
-    started_s="$(date -d "$oldest_started" +%s 2>/dev/null || printf '%s' "$now_s")"
-    sess_elapsed=$(( now_s - started_s ))
-    (( sess_elapsed < 0 )) && sess_elapsed=0
-
-    # Format elapsed: Xs / Xm Ys / Xh Ym
-    if   (( sess_elapsed < 60   )); then sess_elapsed_fmt="${sess_elapsed}s"
-    elif (( sess_elapsed < 3600 )); then sess_elapsed_fmt="$((sess_elapsed/60))m $((sess_elapsed%60))s"
-    else                                 sess_elapsed_fmt="$((sess_elapsed/3600))h $(((sess_elapsed%3600)/60))m"
-    fi
-
-    elapsed_seg=" │ ⏱ ${sess_elapsed_fmt}"
-  fi
 fi
 
-# Failed segment (only when F ≥ 1).
-failed_seg=""
-(( failed_count > 0 )) && failed_seg=$(printf ' │ ✗ %d failed' "$failed_count")
+# Determine elapsed baseline epoch:
+#  1. Oldest "started" from JSONL (parsed above) — preserves existing behavior.
+#  2. Epoch from session-start-<session_id> file — used when JSONL has no started fields.
+#  3. Nothing (no session_id) — skip segment.
+elapsed_baseline_s=""
+if [[ -n "${oldest_started:-}" ]]; then
+  elapsed_baseline_s="$(date -d "$oldest_started" +%s 2>/dev/null)" || elapsed_baseline_s=""
+fi
+if [[ -z "$elapsed_baseline_s" && -n "$session_start_file" && -r "$session_start_file" ]]; then
+  elapsed_baseline_s="$(cat "$session_start_file" 2>/dev/null)" || elapsed_baseline_s=""
+fi
+
+if [[ -n "$elapsed_baseline_s" ]]; then
+  now_s="$(date +%s)"
+  sess_elapsed=$(( now_s - elapsed_baseline_s ))
+  (( sess_elapsed < 0 )) && sess_elapsed=0
+
+  # Format elapsed: Xs / Xm Ys / Xh Ym
+  if   (( sess_elapsed < 60   )); then sess_elapsed_fmt="${sess_elapsed}s"
+  elif (( sess_elapsed < 3600 )); then sess_elapsed_fmt="$((sess_elapsed/60))m $((sess_elapsed%60))s"
+  else                                 sess_elapsed_fmt="$((sess_elapsed/3600))h $(((sess_elapsed%3600)/60))m"
+  fi
+
+  elapsed_seg=" │ ⏱ ${sess_elapsed_fmt}"
+fi
+
+# Failed segment — always rendered (v0.4.0: always-on, default 0).
+failed_seg="$(printf ' │ ✗ %d failed' "$failed_count")"
 
 # Render the final format.
-# When elapsed_seg is empty and failed_seg is empty, output is byte-identical to v0.1 baseline.
+# v0.4.0: ✗ and ⏱ segments are always present when session_id is known.
 printf '[%s] %s%s%s %d%% │ ⚡ %d running | ✓ %d done%s%s\n' \
   "$model" "$color" "$bar" "$reset" "$pct_int" \
   "$running" "$done_count" "$failed_seg" "$elapsed_seg"
