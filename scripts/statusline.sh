@@ -62,8 +62,9 @@ if [[ -n "$session_id" ]]; then
   mkdir -p "${HOME}/.claude/state" 2>/dev/null || true
   session_start_file="${HOME}/.claude/state/session-start-${session_id}"
   if [[ ! -f "$session_start_file" ]]; then
-    printf '%s' "$(date +%s)" > "${session_start_file}.tmp" 2>/dev/null && \
+    if printf '%s' "$(date +%s)" > "${session_start_file}.tmp" 2>/dev/null; then
       mv "${session_start_file}.tmp" "$session_start_file" 2>/dev/null || true
+    fi
   fi
 fi
 
