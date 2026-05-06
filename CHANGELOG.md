@@ -7,6 +7,44 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.6.0] — 2026-05-06
+
+### Added
+
+- **Native Windows support**: The plugin now runs on Windows natively without WSL, MSYS2, or any shell emulation. Node.js 18+ is the only runtime requirement.
+
+### Changed
+
+- **Plugin runtime ported from bash to Node.js**: All three hook scripts (`track-delegation-pre`, `track-delegation-post`, `track-delegation-fail`), the statusline renderer (`statusline.js`), and the shared history library (`scripts/lib/history.js`) are now plain CommonJS modules. Minimum runtime: Node.js 18+.
+- **Zero bash/shell dependencies**: `jq`, `bc`, GNU `date`, and `bash` are no longer required on any platform.
+- **75-test Node.js test suite** replaces the bats/shellcheck suite. Run with `npm test`.
+
+### Removed
+
+- **`/subagents` slash command**: `commands/subagents.md` and `scripts/render-subagents.sh` have been deleted. There is no replacement slash command in v0.6.0.
+- **`commands/` directory**: Removed entirely (was only used by `/subagents`).
+- **`scripts/history-lib.sh`**: Replaced by `scripts/lib/history.js`.
+- **`scripts/track-delegation-{pre,post,fail}.sh`**: Replaced by `.js` equivalents.
+- **All bats test files and `tests/helpers.bash`**: Replaced by the Node.js test suite.
+
+### Breaking
+
+- **`statusLine.command` must be updated**: Users upgrading from v0.5.x must change `~/.claude/settings.json` from:
+  ```
+  "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/statusline.sh\""
+  ```
+  to:
+  ```
+  "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/statusline.js\""
+  ```
+  The plugin does not auto-migrate this field. Without this change, the statusline will stop rendering after upgrade.
+
+### Known Limitations
+
+- **Concurrent JSONL append race on Windows (rare)**: `fs.appendFileSync` is not atomic across concurrent processes on Windows. Identical severity to the v0.5.0 bash `>>` append race — not a regression. In practice this is extremely rare because Task delegations are dispatched sequentially.
+
+---
+
 ## [0.3.1] — 2026-04-28
 
 ### Fixed

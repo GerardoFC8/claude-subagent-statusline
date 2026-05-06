@@ -47,9 +47,9 @@ test('manifest: plugin.json has name field', () => {
   assert.ok(typeof plugin.name === 'string' && plugin.name.length > 0, 'name field must exist');
 });
 
-test('manifest: plugin.json version equals 0.5.0 (slice 1 — not bumped yet)', () => {
+test('manifest: plugin.json version equals 0.6.0 (bumped in slice 3)', () => {
   const plugin = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8'));
-  assert.strictEqual(plugin.version, '0.5.0');
+  assert.strictEqual(plugin.version, '0.6.0');
 });
 
 // ---------------------------------------------------------------------------
@@ -97,4 +97,43 @@ test('manifest: hooks.json PostToolUseFailure command starts with node and refer
 test('manifest: hooks.json has no .sh references (REQ-MANIFEST-101)', () => {
   const hooksText = fs.readFileSync(path.join(REPO_ROOT, 'hooks', 'hooks.json'), 'utf8');
   assert.ok(!hooksText.includes('.sh'), 'hooks.json must not contain any .sh references');
+});
+
+// ---------------------------------------------------------------------------
+// Slice 3 assertions — /subagents removed, versions bumped to 0.6.0, no .sh files
+// (REQ-MANIFEST-102, CAP-COMMAND-SUBAGENTS deleted, CAP-CROSS-PLATFORM)
+// ---------------------------------------------------------------------------
+
+test('manifest: commands/subagents.md does NOT exist (slice 3 — /subagents removed)', () => {
+  const subagentsPath = path.join(REPO_ROOT, 'commands', 'subagents.md');
+  assert.ok(!fs.existsSync(subagentsPath), 'commands/subagents.md must be deleted in v0.6.0');
+});
+
+test('manifest: commands/ directory does NOT exist (slice 3 — entire directory removed)', () => {
+  const commandsDir = path.join(REPO_ROOT, 'commands');
+  assert.ok(!fs.existsSync(commandsDir), 'commands/ directory must be deleted in v0.6.0');
+});
+
+test('manifest: package.json version equals 0.6.0 (slice 3 bump)', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
+  assert.strictEqual(pkg.version, '0.6.0');
+});
+
+test('manifest: no .sh files exist in repo tree (slice 3 — full bash removal)', () => {
+  const repoRoot = REPO_ROOT;
+  function findSh(dir) {
+    const results = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === '.git' || entry.name === 'node_modules') continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        results.push(...findSh(full));
+      } else if (entry.name.endsWith('.sh')) {
+        results.push(full);
+      }
+    }
+    return results;
+  }
+  const shFiles = findSh(repoRoot);
+  assert.deepStrictEqual(shFiles, [], `No .sh files should exist; found: ${shFiles.join(', ')}`);
 });
