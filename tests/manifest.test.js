@@ -61,11 +61,19 @@ test('manifest: hooks.json is valid JSON', () => {
   assert.doesNotThrow(() => JSON.parse(fs.readFileSync(hooksPath, 'utf8')));
 });
 
-test('manifest: hooks.json has 3 hook entries (PreToolUse, PostToolUse, PostToolUseFailure)', () => {
+test('manifest: hooks.json declares the four expected hook events', () => {
   const hooks = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'hooks', 'hooks.json'), 'utf8'));
   assert.ok(hooks.hooks.PreToolUse, 'PreToolUse must exist');
   assert.ok(hooks.hooks.PostToolUse, 'PostToolUse must exist');
   assert.ok(hooks.hooks.PostToolUseFailure, 'PostToolUseFailure must exist');
+  assert.ok(hooks.hooks.SessionStart, 'SessionStart must exist');
+});
+
+test('manifest: hooks.json SessionStart command invokes auto-configure.js with node', () => {
+  const hooks = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'hooks', 'hooks.json'), 'utf8'));
+  const cmd = hooks.hooks.SessionStart[0].hooks[0].command;
+  assert.ok(cmd.startsWith('node '), `must start with "node ": ${cmd}`);
+  assert.ok(cmd.includes('auto-configure.js'), `must reference auto-configure.js: ${cmd}`);
 });
 
 // ---------------------------------------------------------------------------

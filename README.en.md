@@ -21,19 +21,30 @@ claude plugin install claude-subagent-statusline
 
 > **Restart Claude Code after install.** `settings.json` does not hot-reload — the plugin hooks will not fire until you fully restart the application.
 
-## Configure your statusLine
+## Configuration
 
-The plugin registers the tracking hooks automatically, but it does **not** set your `statusLine` field. You must add this snippet to `~/.claude/settings.json` yourself:
+The plugin auto-configures itself on the first session after install:
+
+- If you have **no `statusLine`** set → the plugin registers its renderer for you.
+- If you already have **a custom `statusLine`** → the plugin leaves it intact and prints a one-line notice at session start with instructions to switch.
+- **Before any modification**, the plugin saves a backup at `~/.claude/settings.json.<timestamp>.bak`.
+
+To opt out of auto-configuration, set the environment variable `CSL_NO_AUTO_CONFIGURE=1`.
+
+### Manual configuration (optional)
+
+If you prefer to configure it by hand, add this to `~/.claude/settings.json`:
 
 ```json
 "statusLine": {
+  "type": "command",
   "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/statusline.js\""
 }
 ```
 
 On Windows, `${CLAUDE_PLUGIN_ROOT}` expands to a Windows path. Forward slashes work; alternatively use a fully-qualified path: `node "C:\\Users\\you\\.claude\\plugins\\...\\scripts\\statusline.js"`.
 
-> **Note on the path**: `${CLAUDE_PLUGIN_ROOT}` is a Claude Code variable resolved at runtime. After running `claude plugin install`, check where the plugin was installed (typically somewhere under `~/.claude/plugins/`) and substitute the actual directory name if the variable is not available. If you want a stable reference that survives plugin updates, copy `scripts/statusline.js` to a fixed location and point `settings.json` at it directly.
+> **Note on the path**: `${CLAUDE_PLUGIN_ROOT}` is a Claude Code variable resolved at runtime. If you want a stable reference that survives plugin updates, copy `scripts/statusline.js` to a fixed location and point `settings.json` at it directly.
 
 ## Installing on Windows
 
@@ -65,10 +76,11 @@ The history file stores the **full prompt** and the **sub-agent's response text*
 
 ## How it works
 
-1. **PreToolUse** fires when Claude Code dispatches a Task delegation — the hook appends a `"running"` entry to the per-session counter file AND a full seed entry (including full prompt) to the global history file.
-2. **PostToolUse** fires when the Task completes — the hook appends a `"done"` entry to both the counter file and the history file (with cost and token metrics).
-3. **PostToolUseFailure** fires when the Task fails — the hook appends a `"failed"` entry to both files (metrics are null since failure payloads do not reliably carry cost data).
-4. **`statusline.js`** reads the per-session counter JSONL, counts unique running/done/failed ids, computes session elapsed time from the oldest `started` entry, builds the progress bar from the context window percentage, and prints the formatted line on stdout.
+1. **SessionStart** fires when a new Claude Code session begins — checks `~/.claude/settings.json` and registers the plugin's `statusLine` if absent or if it points to an older version of this plugin (see [Configuration](#configuration)).
+2. **PreToolUse** fires when Claude Code dispatches a Task delegation — the hook appends a `"running"` entry to the per-session counter file AND a full seed entry (including full prompt) to the global history file.
+3. **PostToolUse** fires when the Task completes — the hook appends a `"done"` entry to both the counter file and the history file (with cost and token metrics).
+4. **PostToolUseFailure** fires when the Task fails — the hook appends a `"failed"` entry to both files (metrics are null since failure payloads do not reliably carry cost data).
+5. **`statusline.js`** reads the per-session counter JSONL, counts unique running/done/failed ids, computes session elapsed time from the oldest `started` entry, builds the progress bar from the context window percentage, and prints the formatted line on stdout.
 
 All steps are stateless and append-only — no daemons, no locks, no in-place edits. The history file is trimmed atomically (temp-file + rename) when it exceeds 600 lines, keeping the last 500.
 
