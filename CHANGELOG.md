@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.6.1] — 2026-05-06
+
+### Added
+
+- **Auto-configuration of `statusLine` on session start**: New `SessionStart` hook (`scripts/auto-configure.js`) idempotently configures `~/.claude/settings.json` so users no longer need to edit it manually after install or upgrade. Detects four states: missing → register, points to this plugin (any version or via wrapper) → upgrade in place, already correct → no-op, custom statusLine → leave intact and print a one-line notice.
+- **Cross-platform CI matrix**: GitHub Actions now runs on Ubuntu, macOS, and Windows (Node 22) on every push.
+- **Spanish-default README**: `README.md` is now Castilian Spanish; English moved to `README.en.md` with a language switcher in both files.
+
+### Changed
+
+- README "Configuration" section restructured to lead with auto-configuration; manual setup remains documented as an alternative.
+
+### Safety
+
+- `auto-configure.js` always backs up `settings.json` before any modification (`settings.json.<ISO>.bak`), uses atomic write (`tmp + rename`), refuses to write when the file is malformed JSON, and never throws to the user's session. Opt-out with `CSL_NO_AUTO_CONFIGURE=1`.
+
+---
+
 ## [0.6.0] — 2026-05-06
 
 ### Added
