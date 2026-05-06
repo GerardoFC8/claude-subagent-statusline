@@ -16,7 +16,7 @@ La barra tiene 10 celdas y cambia de color según el porcentaje: verde por debaj
 
 ```
 claude plugin marketplace add GerardoFC8/claude-subagent-statusline
-claude plugin install claude-subagent-statusline
+claude plugin install claude-subagent-statusline@claude-subagent-statusline
 ```
 
 > **Reinicia Claude Code después de instalar.** El archivo `settings.json` no se recarga en caliente — los hooks del plugin no se activarán hasta que la aplicación se reinicie por completo.
@@ -50,7 +50,7 @@ Si prefieres configurarlo a mano, añade esto a `~/.claude/settings.json` reempl
 2. Instala el plugin:
    ```
    claude plugin marketplace add GerardoFC8/claude-subagent-statusline
-   claude plugin install claude-subagent-statusline
+   claude plugin install claude-subagent-statusline@claude-subagent-statusline
    ```
 3. Reinicia Claude Code.
 4. Edita `~/.claude/settings.json` y establece `statusLine.command` con el formato `node` indicado más arriba.
