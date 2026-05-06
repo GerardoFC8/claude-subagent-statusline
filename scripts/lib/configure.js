@@ -9,8 +9,10 @@ function desiredCommand(pluginRoot) {
   if (typeof pluginRoot !== 'string' || pluginRoot.trim() === '') {
     throw new Error('desiredCommand requires an absolute pluginRoot path');
   }
-  const full = path.join(pluginRoot, 'scripts', 'statusline.js');
-  return `node "${full}"`;
+  // Normalize to forward slashes so the same command shape works on every OS.
+  // Node and the Windows shell both accept forward slashes in absolute paths.
+  const normRoot = pluginRoot.replace(/\\/g, '/');
+  return `node "${normRoot}/scripts/statusline.js"`;
 }
 
 function classify(currentCommand, opts) {
