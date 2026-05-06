@@ -21,19 +21,30 @@ claude plugin install claude-subagent-statusline
 
 > **Reinicia Claude Code después de instalar.** El archivo `settings.json` no se recarga en caliente — los hooks del plugin no se activarán hasta que la aplicación se reinicie por completo.
 
-## Configurar el statusLine
+## Configuración
 
-El plugin registra los hooks de seguimiento de forma automática, pero **no** modifica el campo `statusLine`. Hay que añadir este fragmento manualmente a `~/.claude/settings.json`:
+El plugin se autoconfigura en la primera sesión tras instalarlo:
+
+- Si **no tienes ningún `statusLine`** definido → el plugin lo registra automáticamente con su renderizador.
+- Si **ya tienes otro `statusLine`** propio → el plugin lo respeta y muestra un aviso al inicio de la sesión con instrucciones para cambiar.
+- **Antes de cualquier modificación** se guarda un backup en `~/.claude/settings.json.<timestamp>.bak`.
+
+Para desactivar la autoconfiguración, define la variable de entorno `CSL_NO_AUTO_CONFIGURE=1`.
+
+### Configuración manual (opcional)
+
+Si prefieres configurarlo a mano, añade esto a `~/.claude/settings.json`:
 
 ```json
 "statusLine": {
+  "type": "command",
   "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/statusline.js\""
 }
 ```
 
 En Windows, `${CLAUDE_PLUGIN_ROOT}` se expande a una ruta de Windows. Las barras hacia adelante funcionan; como alternativa se puede usar una ruta absoluta: `node "C:\\Users\\tu_usuario\\.claude\\plugins\\...\\scripts\\statusline.js"`.
 
-> **Nota sobre la ruta**: `${CLAUDE_PLUGIN_ROOT}` es una variable de Claude Code que se resuelve en tiempo de ejecución. Después de ejecutar `claude plugin install`, comprueba dónde se instaló el plugin (suele estar en algún subdirectorio de `~/.claude/plugins/`) y sustituye el nombre real del directorio si la variable no está disponible. Si quieres una referencia estable que sobreviva a las actualizaciones del plugin, copia `scripts/statusline.js` a una ubicación fija y haz que `settings.json` apunte directamente allí.
+> **Nota sobre la ruta**: `${CLAUDE_PLUGIN_ROOT}` es una variable de Claude Code que se resuelve en tiempo de ejecución. Si quieres una referencia estable que sobreviva a las actualizaciones del plugin, copia `scripts/statusline.js` a una ubicación fija y haz que `settings.json` apunte directamente allí.
 
 ## Instalación en Windows
 
@@ -65,10 +76,11 @@ El archivo de historial guarda el **prompt completo** y el **texto de respuesta 
 
 ## Cómo funciona
 
-1. **PreToolUse** se dispara cuando Claude Code lanza una delegación de Task — el hook añade una entrada `"running"` al archivo de contadores de la sesión Y una entrada completa (incluyendo el prompt completo) al archivo de historial global.
-2. **PostToolUse** se dispara cuando la tarea termina — el hook añade una entrada `"done"` tanto al archivo de contadores como al historial (con métricas de coste y de tokens).
-3. **PostToolUseFailure** se dispara cuando la tarea falla — el hook añade una entrada `"failed"` a ambos archivos (las métricas son nulas porque los payloads de fallo no transportan datos de coste de forma fiable).
-4. **`statusline.js`** lee el JSONL de contadores de la sesión, cuenta los identificadores únicos en ejecución / completados / fallidos, calcula el tiempo transcurrido a partir de la entrada `started` más antigua, construye la barra de progreso a partir del porcentaje de la ventana de contexto e imprime la línea formateada en stdout.
+1. **SessionStart** se dispara al iniciar una sesión nueva — comprueba `~/.claude/settings.json` y registra el `statusLine` del plugin si no hay ninguno o si apunta a una versión anterior del propio plugin (ver [Configuración](#configuración)).
+2. **PreToolUse** se dispara cuando Claude Code lanza una delegación de Task — el hook añade una entrada `"running"` al archivo de contadores de la sesión Y una entrada completa (incluyendo el prompt completo) al archivo de historial global.
+3. **PostToolUse** se dispara cuando la tarea termina — el hook añade una entrada `"done"` tanto al archivo de contadores como al historial (con métricas de coste y de tokens).
+4. **PostToolUseFailure** se dispara cuando la tarea falla — el hook añade una entrada `"failed"` a ambos archivos (las métricas son nulas porque los payloads de fallo no transportan datos de coste de forma fiable).
+5. **`statusline.js`** lee el JSONL de contadores de la sesión, cuenta los identificadores únicos en ejecución / completados / fallidos, calcula el tiempo transcurrido a partir de la entrada `started` más antigua, construye la barra de progreso a partir del porcentaje de la ventana de contexto e imprime la línea formateada en stdout.
 
 Todos los pasos son sin estado y solo añaden contenido — sin daemons, sin bloqueos, sin ediciones in situ. El archivo de historial se recorta de forma atómica (archivo temporal + rename) cuando supera las 600 líneas, conservando las últimas 500.
 
