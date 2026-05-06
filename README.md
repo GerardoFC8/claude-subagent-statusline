@@ -1,27 +1,29 @@
+**Español** | [English](./README.en.md)
+
 # claude-subagent-statusline
 
-A Claude Code plugin that tracks Task (sub-agent) delegations in real time and renders a live statusline showing your context window usage alongside delegation counts and session elapsed time. Persists a searchable history of every delegation across sessions. **Zero bash dependencies** — runs natively on Windows, macOS, and Linux via Node.js 18+.
+Plugin para Claude Code que monitoriza las delegaciones a sub-agentes (Task) en tiempo real y muestra una statusline en vivo con el uso de la ventana de contexto, el conteo de delegaciones y el tiempo transcurrido de la sesión. Mantiene un historial persistente y consultable de cada delegación entre sesiones. Node.js puro (18 o superior) — funciona en Windows, macOS y Linux.
 
-## Preview
+## Vista previa
 
 ```
 [Opus 4.7] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed │ ⏱ 14m 32s
 ```
 
-The bar is 10 cells wide and color-coded: green below 50%, yellow 50–79%, red 80%+. Both `✗ failed` and `⏱` segments render unconditionally — you get `✗ 0 failed` and `⏱ 0s` from the very first statusline call.
+La barra tiene 10 celdas y cambia de color según el porcentaje: verde por debajo del 50%, amarillo entre 50% y 79%, rojo a partir del 80%. Los segmentos `✗ failed` y `⏱` se muestran siempre — desde la primera invocación se ven `✗ 0 failed` y `⏱ 0s`.
 
-## Install
+## Instalación
 
 ```
 claude plugin marketplace add GerardoFC8/claude-subagent-statusline
 claude plugin install claude-subagent-statusline
 ```
 
-> **Restart Claude Code after install.** `settings.json` does not hot-reload — the plugin hooks will not fire until you fully restart the application.
+> **Reinicia Claude Code después de instalar.** El archivo `settings.json` no se recarga en caliente — los hooks del plugin no se activarán hasta que la aplicación se reinicie por completo.
 
-## Configure your statusLine
+## Configurar el statusLine
 
-The plugin registers the tracking hooks automatically, but it does **not** set your `statusLine` field. You must add this snippet to `~/.claude/settings.json` yourself:
+El plugin registra los hooks de seguimiento de forma automática, pero **no** modifica el campo `statusLine`. Hay que añadir este fragmento manualmente a `~/.claude/settings.json`:
 
 ```json
 "statusLine": {
@@ -29,83 +31,81 @@ The plugin registers the tracking hooks automatically, but it does **not** set y
 }
 ```
 
-On Windows, `${CLAUDE_PLUGIN_ROOT}` expands to a Windows path. Forward slashes work; alternatively use a fully-qualified path: `node "C:\\Users\\you\\.claude\\plugins\\...\\scripts\\statusline.js"`.
+En Windows, `${CLAUDE_PLUGIN_ROOT}` se expande a una ruta de Windows. Las barras hacia adelante funcionan; como alternativa se puede usar una ruta absoluta: `node "C:\\Users\\tu_usuario\\.claude\\plugins\\...\\scripts\\statusline.js"`.
 
-> **Upgrading from v0.5.x?** The old `statusLine.command` pointed to `bash .../statusline.sh`. The new value must be `node ".../statusline.js"`. Edit `~/.claude/settings.json` by hand — there is no auto-migration.
+> **Nota sobre la ruta**: `${CLAUDE_PLUGIN_ROOT}` es una variable de Claude Code que se resuelve en tiempo de ejecución. Después de ejecutar `claude plugin install`, comprueba dónde se instaló el plugin (suele estar en algún subdirectorio de `~/.claude/plugins/`) y sustituye el nombre real del directorio si la variable no está disponible. Si quieres una referencia estable que sobreviva a las actualizaciones del plugin, copia `scripts/statusline.js` a una ubicación fija y haz que `settings.json` apunte directamente allí.
 
-> **Note on the path**: `${CLAUDE_PLUGIN_ROOT}` is a Claude Code variable resolved at runtime. After running `claude plugin install`, check where the plugin was installed (typically somewhere under `~/.claude/plugins/`) and substitute the actual directory name if the variable is not available. If you want a stable reference that survives plugin updates, copy `scripts/statusline.js` to a fixed location and point `settings.json` at it directly.
+## Instalación en Windows
 
-## Installing on Windows
-
-1. Install Node.js 18 or later from [nodejs.org](https://nodejs.org/). The LTS release is recommended.
-2. Install the plugin:
+1. Instala Node.js 18 o superior desde [nodejs.org](https://nodejs.org/). Se recomienda la versión LTS.
+2. Instala el plugin:
    ```
    claude plugin marketplace add GerardoFC8/claude-subagent-statusline
    claude plugin install claude-subagent-statusline
    ```
-3. Restart Claude Code.
-4. Edit `~/.claude/settings.json` and set `statusLine.command` to the `node` form shown above.
+3. Reinicia Claude Code.
+4. Edita `~/.claude/settings.json` y establece `statusLine.command` con el formato `node` indicado más arriba.
 
-No WSL, MSYS2, or shell emulation required. The plugin is pure Node.js.
+No se necesita WSL, MSYS2 ni ninguna emulación de shell. El plugin es Node.js puro.
 
-## Coexistence with an existing statusLine
+## Coexistencia con otro statusLine
 
-If you already have a statusLine renderer, you can read the delegation state from the JSONL file and append the counters to your existing output. The counter file lives at `~/.claude/state/delegations-<session_id>.jsonl`. Each entry has `id`, `status` (`running` | `done` | `failed`), and `started` fields. Unique-id counting gives you the running/done/failed totals.
+Si ya tienes otro renderizador de statusLine, puedes leer el estado de las delegaciones desde el archivo JSONL y añadir los contadores a tu salida actual. El archivo de contadores está en `~/.claude/state/delegations-<session_id>.jsonl`. Cada entrada contiene los campos `id`, `status` (`running` | `done` | `failed`) y `started`. Contar identificadores únicos da los totales de en ejecución, completadas y fallidas.
 
-## Persistent delegation history
+## Historial persistente de delegaciones
 
-Every Task delegation is recorded to a global JSONL file with full prompt, metadata, outcome, and the sub-agent's response text (truncated at 16 KB). The file is capped at 500 entries (ring buffer) and survives session boundaries.
+Cada delegación de Task se registra en un archivo JSONL global con el prompt completo, los metadatos, el resultado y el texto de respuesta del sub-agente (truncado a 16 KB). El archivo tiene un tope de 500 entradas (buffer circular) y persiste entre sesiones.
 
-Default location: `~/.claude/state/delegation-history.jsonl`
-Custom location: set `CLAUDE_PLUGIN_DATA=/your/dir` — the plugin writes to `$CLAUDE_PLUGIN_DATA/history.jsonl`.
+Ubicación por defecto: `~/.claude/state/delegation-history.jsonl`
+Ubicación personalizada: define `CLAUDE_PLUGIN_DATA=/tu/directorio` — el plugin escribirá en `$CLAUDE_PLUGIN_DATA/history.jsonl`.
 
-## Privacy note
+## Aviso de privacidad
 
-The history file stores the **full prompt** and the **sub-agent's response text** (truncated at 16 KB) of every Task delegation. If your prompts or sub-agent responses contain sensitive information, review the file before sharing or committing. The file is local to your machine and never sent anywhere by this plugin.
+El archivo de historial guarda el **prompt completo** y el **texto de respuesta del sub-agente** (truncado a 16 KB) de cada delegación. Si tus prompts o las respuestas contienen información sensible, revisa el archivo antes de compartirlo o subirlo a un repositorio. El archivo es local de tu máquina y este plugin no lo envía a ningún sitio.
 
-## How it works
+## Cómo funciona
 
-1. **PreToolUse** fires when Claude Code dispatches a Task delegation — the hook appends a `"running"` entry to the per-session counter file AND a full seed entry (including full prompt) to the global history file.
-2. **PostToolUse** fires when the Task completes — the hook appends a `"done"` entry to both the counter file and the history file (with cost and token metrics).
-3. **PostToolUseFailure** fires when the Task fails — the hook appends a `"failed"` entry to both files (metrics are null since failure payloads do not reliably carry cost data).
-4. **`statusline.js`** reads the per-session counter JSONL, counts unique running/done/failed ids, computes session elapsed time from the oldest `started` entry, builds the progress bar from the context window percentage, and prints the formatted line on stdout.
+1. **PreToolUse** se dispara cuando Claude Code lanza una delegación de Task — el hook añade una entrada `"running"` al archivo de contadores de la sesión Y una entrada completa (incluyendo el prompt completo) al archivo de historial global.
+2. **PostToolUse** se dispara cuando la tarea termina — el hook añade una entrada `"done"` tanto al archivo de contadores como al historial (con métricas de coste y de tokens).
+3. **PostToolUseFailure** se dispara cuando la tarea falla — el hook añade una entrada `"failed"` a ambos archivos (las métricas son nulas porque los payloads de fallo no transportan datos de coste de forma fiable).
+4. **`statusline.js`** lee el JSONL de contadores de la sesión, cuenta los identificadores únicos en ejecución / completados / fallidos, calcula el tiempo transcurrido a partir de la entrada `started` más antigua, construye la barra de progreso a partir del porcentaje de la ventana de contexto e imprime la línea formateada en stdout.
 
-All steps are stateless and append-only — no daemons, no locks, no in-place edits. The history file is trimmed atomically (temp-file + rename) when it exceeds 600 lines, keeping the last 500.
+Todos los pasos son sin estado y solo añaden contenido — sin daemons, sin bloqueos, sin ediciones in situ. El archivo de historial se recorta de forma atómica (archivo temporal + rename) cuando supera las 600 líneas, conservando las últimas 500.
 
-## Troubleshooting
+## Solución de problemas
 
-**Hooks did not fire / counters stuck at 0**
-Restart Claude Code. Hooks are registered at startup; a running instance does not pick up newly installed plugins.
+**Los hooks no se disparan / los contadores se quedan en 0**
+Reinicia Claude Code. Los hooks se registran al arrancar; una instancia en ejecución no detecta plugins recién instalados.
 
-**JSONL file not appearing in `~/.claude/state/`**
-Verify the directory exists and is writable. If missing, create it:
+**El archivo JSONL no aparece en `~/.claude/state/`**
+Verifica que el directorio existe y se puede escribir. Si no existe, créalo:
 
 - Linux/macOS: `mkdir -p ~/.claude/state`
 - Windows (PowerShell): `New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\state"`
 
-**Counter values look wrong**
-Inspect the raw JSONL for the current session. Each delegation produces two lines: one with `"status":"running"` (from PreToolUse) and one with `"status":"done"` or `"status":"failed"` (from PostToolUse or PostToolUseFailure). If you see only running lines, the PostToolUse hook may not have fired yet or the task is still in progress.
+**Los contadores muestran valores raros**
+Inspecciona el JSONL crudo de la sesión actual. Cada delegación genera dos líneas: una con `"status":"running"` (de PreToolUse) y otra con `"status":"done"` o `"status":"failed"` (de PostToolUse o PostToolUseFailure). Si solo ves líneas `running`, puede que el hook PostToolUse aún no se haya disparado o que la tarea todavía esté en curso.
 
-## Known Limitations
+## Limitaciones conocidas
 
-**Concurrent JSONL append race on Windows (rare)**
-`fs.appendFileSync` is not atomic across concurrent processes on Windows. If two hook invocations fire simultaneously for separate delegations, JSONL lines could be interleaved. This is the same race that existed in the v0.5.0 bash implementation (`>>` append) — it is not a regression. In practice it is extremely rare because Task delegations are dispatched sequentially. If you hit it, the affected line(s) will produce a JSON parse error in the statusline (which is silently skipped), and the history will have a corrupt entry that is harmlessly ignored.
+**Condición de carrera al añadir al JSONL en Windows (poco frecuente)**
+`fs.appendFileSync` no es atómico entre procesos concurrentes en Windows. Si dos invocaciones de hook se disparan simultáneamente para delegaciones distintas, las líneas del JSONL podrían entrelazarse. En la práctica es muy rara porque las delegaciones de Task se lanzan de forma secuencial. Si ocurre, las líneas afectadas producirán un error de parseo JSON en la statusline (que se ignora silenciosamente) y el historial tendrá una entrada corrupta que se descarta sin efectos.
 
-## Contributing
+## Contribuir
 
 ```bash
 git clone https://github.com/GerardoFC8/claude-subagent-statusline.git
 cd claude-subagent-statusline
 
-# Requires Node.js 18+
-node --version   # must be >= 18
+# Requiere Node.js 18 o superior
+node --version   # debe ser >= 18
 
-# Run the full test suite
+# Ejecuta toda la suite de tests
 npm test
 ```
 
-All scripts must pass `npm test` (75 tests) with zero failures before merging. No bash, no shellcheck, no bats required.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (75 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
-## License
+## Licencia
 
-MIT — see [LICENSE](LICENSE).
+MIT — consulta [LICENSE](LICENSE).
