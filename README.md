@@ -2,7 +2,7 @@
 
 # claude-subagent-statusline
 
-Plugin para Claude Code que monitoriza las delegaciones a sub-agentes (Task) en tiempo real y muestra una statusline en vivo con el uso de la ventana de contexto, el conteo de delegaciones y el tiempo transcurrido de la sesión. Mantiene un historial persistente y consultable de cada delegación entre sesiones. **Cero dependencias de bash** — se ejecuta de forma nativa en Windows, macOS y Linux mediante Node.js 18 o superior.
+Plugin para Claude Code que monitoriza las delegaciones a sub-agentes (Task) en tiempo real y muestra una statusline en vivo con el uso de la ventana de contexto, el conteo de delegaciones y el tiempo transcurrido de la sesión. Mantiene un historial persistente y consultable de cada delegación entre sesiones. Node.js puro (18 o superior) — funciona en Windows, macOS y Linux.
 
 ## Vista previa
 
@@ -32,8 +32,6 @@ El plugin registra los hooks de seguimiento de forma automática, pero **no** mo
 ```
 
 En Windows, `${CLAUDE_PLUGIN_ROOT}` se expande a una ruta de Windows. Las barras hacia adelante funcionan; como alternativa se puede usar una ruta absoluta: `node "C:\\Users\\tu_usuario\\.claude\\plugins\\...\\scripts\\statusline.js"`.
-
-> **¿Vienes de la versión 0.5.x?** El antiguo `statusLine.command` apuntaba a `bash .../statusline.sh`. El valor nuevo debe ser `node ".../statusline.js"`. Edita `~/.claude/settings.json` a mano — no hay migración automática.
 
 > **Nota sobre la ruta**: `${CLAUDE_PLUGIN_ROOT}` es una variable de Claude Code que se resuelve en tiempo de ejecución. Después de ejecutar `claude plugin install`, comprueba dónde se instaló el plugin (suele estar en algún subdirectorio de `~/.claude/plugins/`) y sustituye el nombre real del directorio si la variable no está disponible. Si quieres una referencia estable que sobreviva a las actualizaciones del plugin, copia `scripts/statusline.js` a una ubicación fija y haz que `settings.json` apunte directamente allí.
 
@@ -91,7 +89,7 @@ Inspecciona el JSONL crudo de la sesión actual. Cada delegación genera dos lí
 ## Limitaciones conocidas
 
 **Condición de carrera al añadir al JSONL en Windows (poco frecuente)**
-`fs.appendFileSync` no es atómico entre procesos concurrentes en Windows. Si dos invocaciones de hook se disparan simultáneamente para delegaciones distintas, las líneas del JSONL podrían entrelazarse. Es la misma condición de carrera que existía en la implementación bash de la v0.5.0 (`>>` con append) — no es una regresión. En la práctica es muy rara porque las delegaciones de Task se lanzan de forma secuencial. Si ocurre, las líneas afectadas producirán un error de parseo JSON en la statusline (que se ignora silenciosamente) y el historial tendrá una entrada corrupta que se descarta sin efectos.
+`fs.appendFileSync` no es atómico entre procesos concurrentes en Windows. Si dos invocaciones de hook se disparan simultáneamente para delegaciones distintas, las líneas del JSONL podrían entrelazarse. En la práctica es muy rara porque las delegaciones de Task se lanzan de forma secuencial. Si ocurre, las líneas afectadas producirán un error de parseo JSON en la statusline (que se ignora silenciosamente) y el historial tendrá una entrada corrupta que se descarta sin efectos.
 
 ## Contribuir
 
@@ -106,7 +104,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (75 tests) sin ningún fallo. No se necesita bash, ni shellcheck, ni bats. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (75 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 

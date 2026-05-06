@@ -2,7 +2,7 @@
 
 # claude-subagent-statusline
 
-A Claude Code plugin that tracks Task (sub-agent) delegations in real time and renders a live statusline showing your context window usage alongside delegation counts and session elapsed time. Persists a searchable history of every delegation across sessions. **Zero bash dependencies** — runs natively on Windows, macOS, and Linux via Node.js 18+.
+A Claude Code plugin that tracks Task (sub-agent) delegations in real time and renders a live statusline showing your context window usage alongside delegation counts and session elapsed time. Persists a searchable history of every delegation across sessions. Pure Node.js (18+) — runs on Windows, macOS, and Linux.
 
 ## Preview
 
@@ -32,8 +32,6 @@ The plugin registers the tracking hooks automatically, but it does **not** set y
 ```
 
 On Windows, `${CLAUDE_PLUGIN_ROOT}` expands to a Windows path. Forward slashes work; alternatively use a fully-qualified path: `node "C:\\Users\\you\\.claude\\plugins\\...\\scripts\\statusline.js"`.
-
-> **Upgrading from v0.5.x?** The old `statusLine.command` pointed to `bash .../statusline.sh`. The new value must be `node ".../statusline.js"`. Edit `~/.claude/settings.json` by hand — there is no auto-migration.
 
 > **Note on the path**: `${CLAUDE_PLUGIN_ROOT}` is a Claude Code variable resolved at runtime. After running `claude plugin install`, check where the plugin was installed (typically somewhere under `~/.claude/plugins/`) and substitute the actual directory name if the variable is not available. If you want a stable reference that survives plugin updates, copy `scripts/statusline.js` to a fixed location and point `settings.json` at it directly.
 
@@ -91,7 +89,7 @@ Inspect the raw JSONL for the current session. Each delegation produces two line
 ## Known Limitations
 
 **Concurrent JSONL append race on Windows (rare)**
-`fs.appendFileSync` is not atomic across concurrent processes on Windows. If two hook invocations fire simultaneously for separate delegations, JSONL lines could be interleaved. This is the same race that existed in the v0.5.0 bash implementation (`>>` append) — it is not a regression. In practice it is extremely rare because Task delegations are dispatched sequentially. If you hit it, the affected line(s) will produce a JSON parse error in the statusline (which is silently skipped), and the history will have a corrupt entry that is harmlessly ignored.
+`fs.appendFileSync` is not atomic across concurrent processes on Windows. If two hook invocations fire simultaneously for separate delegations, JSONL lines could be interleaved. In practice it is extremely rare because Task delegations are dispatched sequentially. If you hit it, the affected line(s) will produce a JSON parse error in the statusline (which is silently skipped), and the history will have a corrupt entry that is harmlessly ignored.
 
 ## Contributing
 
@@ -106,7 +104,7 @@ node --version   # must be >= 18
 npm test
 ```
 
-All scripts must pass `npm test` (75 tests) with zero failures before merging. No bash, no shellcheck, no bats required. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
+All changes must pass `npm test` (75 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
 
 ## License
 
