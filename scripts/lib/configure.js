@@ -5,8 +5,14 @@ const path = require('node:path');
 const PLUGIN_ROOT_PLACEHOLDER = '${CLAUDE_PLUGIN_ROOT}';
 const STATUSLINE_REL_PATH = 'scripts/statusline.js';
 
-function desiredCommand() {
-  return `node "${PLUGIN_ROOT_PLACEHOLDER}/${STATUSLINE_REL_PATH}"`;
+function desiredCommand(pluginRoot) {
+  if (typeof pluginRoot !== 'string' || pluginRoot.trim() === '') {
+    throw new Error('desiredCommand requires an absolute pluginRoot path');
+  }
+  // Normalize to forward slashes so the same command shape works on every OS.
+  // Node and the Windows shell both accept forward slashes in absolute paths.
+  const normRoot = pluginRoot.replace(/\\/g, '/');
+  return `node "${normRoot}/scripts/statusline.js"`;
 }
 
 function classify(currentCommand, opts) {
@@ -24,7 +30,11 @@ function classify(currentCommand, opts) {
 }
 
 function planAction(settings, opts) {
-  const desired = desiredCommand();
+  const o = opts || {};
+  if (typeof o.pluginRoot !== 'string' || o.pluginRoot.trim() === '') {
+    throw new Error('planAction requires opts.pluginRoot');
+  }
+  const desired = desiredCommand(o.pluginRoot);
   const currentCommand = settings && settings.statusLine ? settings.statusLine.command : undefined;
   const classification = classify(currentCommand, opts);
   if (classification === 'custom') return { action: 'inform', desired, currentCommand, classification };

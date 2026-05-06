@@ -33,18 +33,16 @@ Para desactivar la autoconfiguración, define la variable de entorno `CSL_NO_AUT
 
 ### Configuración manual (opcional)
 
-Si prefieres configurarlo a mano, añade esto a `~/.claude/settings.json`:
+Si prefieres configurarlo a mano, añade esto a `~/.claude/settings.json` reemplazando `<RUTA>` con la ruta de instalación real del plugin (la podés ver en `~/.claude/plugins/installed_plugins.json`, campo `installPath`):
 
 ```json
 "statusLine": {
   "type": "command",
-  "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/statusline.js\""
+  "command": "node \"<RUTA>/scripts/statusline.js\""
 }
 ```
 
-En Windows, `${CLAUDE_PLUGIN_ROOT}` se expande a una ruta de Windows. Las barras hacia adelante funcionan; como alternativa se puede usar una ruta absoluta: `node "C:\\Users\\tu_usuario\\.claude\\plugins\\...\\scripts\\statusline.js"`.
-
-> **Nota sobre la ruta**: `${CLAUDE_PLUGIN_ROOT}` es una variable de Claude Code que se resuelve en tiempo de ejecución. Si quieres una referencia estable que sobreviva a las actualizaciones del plugin, copia `scripts/statusline.js` a una ubicación fija y haz que `settings.json` apunte directamente allí.
+> **Importante**: usa la ruta absoluta. La variable `${CLAUDE_PLUGIN_ROOT}` solo se expande dentro del `hooks.json` del plugin — Claude Code no la sustituye en `statusLine.command` del `settings.json` del usuario. Por eso la autoconfiguración escribe la ruta absoluta y la actualiza en cada upgrade del plugin.
 
 ## Instalación en Windows
 

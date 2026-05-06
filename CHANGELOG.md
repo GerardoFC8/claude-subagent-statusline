@@ -7,6 +7,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.6.2] — 2026-05-06
+
+### Fixed
+
+- **Auto-configured `statusLine.command` was unusable** because `${CLAUDE_PLUGIN_ROOT}` is only expanded by Claude Code inside plugin-shipped `hooks.json`, not in user `~/.claude/settings.json`. Users who let v0.6.1's `SessionStart` hook run ended up with a literal placeholder in their settings, causing the statusline to silently disappear (Node could not resolve the script path).
+- `auto-configure.js` now resolves the plugin's absolute install path at hook time (via `__dirname`) and writes that absolute path into `settings.json`. The path is rewritten on every plugin upgrade — no manual editing needed.
+- `lib/configure.js` `desiredCommand(pluginRoot)` now requires an explicit absolute path; both legacy forms (bash wrapper, `${CLAUDE_PLUGIN_ROOT}` placeholder) are still classified as "ours" and auto-upgraded to the canonical absolute form.
+
+### Recovery
+
+If you upgraded to v0.6.1 and lost your statusline, simply update to v0.6.2 and start a new session — the SessionStart hook detects the broken placeholder form and rewrites `settings.json` automatically (with a backup, as always).
+
+---
+
 ## [0.6.1] — 2026-05-06
 
 ### Added

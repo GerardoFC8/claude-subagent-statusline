@@ -33,18 +33,16 @@ To opt out of auto-configuration, set the environment variable `CSL_NO_AUTO_CONF
 
 ### Manual configuration (optional)
 
-If you prefer to configure it by hand, add this to `~/.claude/settings.json`:
+If you prefer to configure it by hand, add this to `~/.claude/settings.json` replacing `<PATH>` with the plugin's real install directory (you can find it in `~/.claude/plugins/installed_plugins.json`, field `installPath`):
 
 ```json
 "statusLine": {
   "type": "command",
-  "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/statusline.js\""
+  "command": "node \"<PATH>/scripts/statusline.js\""
 }
 ```
 
-On Windows, `${CLAUDE_PLUGIN_ROOT}` expands to a Windows path. Forward slashes work; alternatively use a fully-qualified path: `node "C:\\Users\\you\\.claude\\plugins\\...\\scripts\\statusline.js"`.
-
-> **Note on the path**: `${CLAUDE_PLUGIN_ROOT}` is a Claude Code variable resolved at runtime. If you want a stable reference that survives plugin updates, copy `scripts/statusline.js` to a fixed location and point `settings.json` at it directly.
+> **Important**: use the absolute path. `${CLAUDE_PLUGIN_ROOT}` is only expanded inside a plugin's `hooks.json` — Claude Code does NOT substitute it in user `settings.json` `statusLine.command`. That is why the auto-configuration writes the absolute path and refreshes it on every plugin upgrade.
 
 ## Installing on Windows
 
