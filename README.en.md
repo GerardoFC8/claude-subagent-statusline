@@ -16,7 +16,7 @@ The bar is 10 cells wide and color-coded: green below 50%, yellow 50–79%, red 
 
 ```
 claude plugin marketplace add GerardoFC8/claude-subagent-statusline
-claude plugin install claude-subagent-statusline
+claude plugin install claude-subagent-statusline@claude-subagent-statusline
 ```
 
 > **Restart Claude Code after install.** `settings.json` does not hot-reload — the plugin hooks will not fire until you fully restart the application.
@@ -50,7 +50,7 @@ If you prefer to configure it by hand, add this to `~/.claude/settings.json` rep
 2. Install the plugin:
    ```
    claude plugin marketplace add GerardoFC8/claude-subagent-statusline
-   claude plugin install claude-subagent-statusline
+   claude plugin install claude-subagent-statusline@claude-subagent-statusline
    ```
 3. Restart Claude Code.
 4. Edit `~/.claude/settings.json` and set `statusLine.command` to the `node` form shown above.
