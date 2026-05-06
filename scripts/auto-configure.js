@@ -47,7 +47,8 @@ function main() {
     // wrapper not present — ignore
   }
 
-  const plan = planAction(settings, { wrapperPath, wrapperRefersToOurs });
+  const pluginRoot = path.resolve(__dirname, '..');
+  const plan = planAction(settings, { wrapperPath, wrapperRefersToOurs, pluginRoot });
 
   if (plan.action === 'noop') return 0;
 

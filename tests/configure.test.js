@@ -12,6 +12,10 @@ const { mkTmpHome, cleanupTmpHome } = require('./_helpers');
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CONFIGURE_LIB = path.join(REPO_ROOT, 'scripts', 'lib', 'configure.js');
 const AUTO_CONFIGURE_SCRIPT = path.join(REPO_ROOT, 'scripts', 'auto-configure.js');
+// Fixture mirrors the real-world install path shape, which always includes the
+// plugin name as a directory segment (e.g. ~/.claude/plugins/cache/<m>/<plugin>/<v>/).
+const PLUGIN_ROOT = '/fake/cache/claude-subagent-statusline/claude-subagent-statusline/9.9.9';
+const PLUGIN_OPTS = { pluginRoot: PLUGIN_ROOT };
 
 const lib = require(CONFIGURE_LIB);
 
@@ -84,44 +88,75 @@ test('classify: arbitrary command returns "custom"', () => {
 // ---------- planAction() unit tests ----------
 
 test('planAction: settings without statusLine → action "create"', () => {
-  const plan = lib.planAction({});
+  const plan = lib.planAction({}, PLUGIN_OPTS);
   assert.equal(plan.action, 'create');
-  assert.match(plan.desired, /\$\{CLAUDE_PLUGIN_ROOT\}/);
-  assert.match(plan.desired, /scripts\/statusline\.js/);
+  assert.ok(plan.desired.includes(PLUGIN_ROOT), 'desired must include absolute pluginRoot');
+  assert.match(plan.desired, /scripts[\\/]statusline\.js/);
+  assert.ok(!plan.desired.includes('${CLAUDE_PLUGIN_ROOT}'), 'desired must NOT contain the placeholder');
 });
 
 test('planAction: null settings → action "create"', () => {
-  const plan = lib.planAction(null);
+  const plan = lib.planAction(null, PLUGIN_OPTS);
   assert.equal(plan.action, 'create');
 });
 
 test('planAction: statusLine.command empty → action "create"', () => {
-  const plan = lib.planAction({ statusLine: { command: '' } });
+  const plan = lib.planAction({ statusLine: { command: '' } }, PLUGIN_OPTS);
   assert.equal(plan.action, 'create');
 });
 
 test('planAction: ours and equal to desired → action "noop"', () => {
-  const desired = lib.desiredCommand();
-  const plan = lib.planAction({ statusLine: { command: desired } });
+  const desired = lib.desiredCommand(PLUGIN_ROOT);
+  const plan = lib.planAction({ statusLine: { command: desired } }, PLUGIN_OPTS);
   assert.equal(plan.action, 'noop');
 });
 
-test('planAction: ours but pointing to old path → action "update"', () => {
-  const plan = lib.planAction({
-    statusLine: { command: 'bash "${CLAUDE_PLUGIN_ROOT}/scripts/statusline.sh"' },
-  });
+test('planAction: ours but pointing to old bash form → action "update"', () => {
+  const plan = lib.planAction(
+    { statusLine: { command: 'bash "${CLAUDE_PLUGIN_ROOT}/scripts/statusline.sh"' } },
+    PLUGIN_OPTS,
+  );
   assert.equal(plan.action, 'update');
 });
 
+test('planAction: ours but pointing to legacy ${CLAUDE_PLUGIN_ROOT} placeholder → action "update"', () => {
+  // v0.6.1 wrote settings using the placeholder which Claude Code does not expand
+  // in user settings.json. v0.6.2+ writes absolute paths instead — this case must
+  // detect the legacy form as ours-stale and rewrite it on the next session start.
+  const plan = lib.planAction(
+    { statusLine: { command: 'node "${CLAUDE_PLUGIN_ROOT}/scripts/statusline.js"' } },
+    PLUGIN_OPTS,
+  );
+  assert.equal(plan.action, 'update');
+  assert.ok(plan.desired.includes(PLUGIN_ROOT));
+});
+
 test('planAction: custom statusLine → action "inform"', () => {
-  const plan = lib.planAction({ statusLine: { command: 'starship' } });
+  const plan = lib.planAction({ statusLine: { command: 'starship' } }, PLUGIN_OPTS);
   assert.equal(plan.action, 'inform');
+});
+
+test('planAction: throws when pluginRoot is missing', () => {
+  assert.throws(() => lib.planAction({}), /pluginRoot/);
+  assert.throws(() => lib.planAction({}, {}), /pluginRoot/);
+});
+
+test('desiredCommand: throws when pluginRoot is missing or empty', () => {
+  assert.throws(() => lib.desiredCommand(), /pluginRoot/);
+  assert.throws(() => lib.desiredCommand(''), /pluginRoot/);
+  assert.throws(() => lib.desiredCommand('   '), /pluginRoot/);
+});
+
+test('desiredCommand: produces absolute-path command without placeholder', () => {
+  const cmd = lib.desiredCommand('/some/abs/path');
+  assert.equal(cmd, 'node "/some/abs/path/scripts/statusline.js"');
+  assert.ok(!cmd.includes('${CLAUDE_PLUGIN_ROOT}'));
 });
 
 // ---------- applyAction() unit tests ----------
 
 test('applyAction: create produces statusLine block with type and command', () => {
-  const plan = lib.planAction({});
+  const plan = lib.planAction({}, PLUGIN_OPTS);
   const next = lib.applyAction(plan, {});
   assert.equal(next.statusLine.command, plan.desired);
   assert.equal(next.statusLine.type, 'command');
@@ -133,7 +168,7 @@ test('applyAction: update preserves other settings.json keys', () => {
     permissions: { allow: ['Bash'] },
     statusLine: { type: 'command', command: 'bash "${CLAUDE_PLUGIN_ROOT}/scripts/statusline.sh"' },
   };
-  const plan = lib.planAction(original);
+  const plan = lib.planAction(original, PLUGIN_OPTS);
   assert.equal(plan.action, 'update', 'sanity: this fixture must trigger an update');
   const next = lib.applyAction(plan, original);
   assert.equal(next.theme, 'dark');
@@ -196,7 +231,9 @@ test('auto-configure: noop when already correct', (t) => {
   const home = mkTmpHome();
   t.after(() => cleanupTmpHome(home));
 
-  const desired = lib.desiredCommand();
+  // The script resolves pluginRoot from __dirname, so the desired command for
+  // the noop fixture must match what the script will compute against REPO_ROOT.
+  const desired = lib.desiredCommand(REPO_ROOT);
   writeSettings(home, { statusLine: { type: 'command', command: desired } });
 
   const before = fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf-8');
