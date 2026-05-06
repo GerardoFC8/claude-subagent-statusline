@@ -98,18 +98,13 @@ The plugin registers the tracking hooks automatically, but it does **not** set y
 
 ```json
 "statusLine": {
-  "type": "command",
-  "command": "bash ~/.claude/plugins/<resolved-path>/scripts/statusline.sh"
+  "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/statusline.js\""
 }
 ```
 
-> **Note on the path**: `<resolved-path>` is not auto-discoverable. After running `claude plugin install`, check where the plugin was installed (typically somewhere under `~/.claude/plugins/`) and substitute the actual directory name. If you want a stable reference that survives plugin updates, copy `statusline.sh` to a fixed location:
->
-> ```bash
-> cp ~/.claude/plugins/<resolved-path>/scripts/statusline.sh ~/.claude/statusline.sh
-> ```
->
-> Then point `settings.json` at `~/.claude/statusline.sh` instead.
+Update `~/.claude/settings.json` manually with the new command value. On Windows, forward slashes work; alternatively use `node "C:\\path\\to\\scripts\\statusline.js"`.
+
+> **Note on the path**: `<resolved-path>` is not auto-discoverable. After running `claude plugin install`, check where the plugin was installed (typically somewhere under `~/.claude/plugins/`) and substitute the actual directory name. If you want a stable reference that survives plugin updates, copy `scripts/statusline.js` to a fixed location and point `settings.json` at it directly.
 
 ## Coexistence with an existing statusLine
 
