@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/track-delegation-pre.sh",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/track-delegation-pre.js\"",
             "async": true
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/track-delegation-post.sh",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/track-delegation-post.js\"",
             "async": true
           }
         ]
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/track-delegation-fail.sh",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/track-delegation-fail.js\"",
             "async": true
           }
         ]

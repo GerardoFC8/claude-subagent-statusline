@@ -1,4 +1,4 @@
-// tests/history.test.js — read-side (slice 1)
+// tests/history.test.js — read-side (slice 1) + write-side (slice 2)
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -188,7 +188,7 @@ test('history: atomicWrite writes content to file via rename', () => {
 });
 
 // ---------------------------------------------------------------------------
-// module.exports check — all expected functions exported
+// module.exports check — all expected functions exported (slice 1 + slice 2)
 // ---------------------------------------------------------------------------
 test('history: module exports all required functions', () => {
   const lib = require('../scripts/lib/history');
@@ -196,8 +196,192 @@ test('history: module exports all required functions', () => {
     'historyPath', 'counterPath', 'sessionStartPath',
     'readCounters', 'atomicWrite',
     'nowEpochSeconds', 'isoToEpochSeconds',
+    // slice 2 write-side
+    'historyAppend', 'counterAppend', 'historyTrimIfNeeded', 'nowIsoZ',
   ];
   for (const fn of required) {
     assert.strictEqual(typeof lib[fn], 'function', `${fn} must be exported`);
+  }
+});
+
+// ===========================================================================
+// SLICE 2 — WRITE-SIDE TESTS
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// 2.1.1 — nowIsoZ() returns UTC Z-suffix timestamp
+// ---------------------------------------------------------------------------
+test('history: nowIsoZ() returns UTC Z timestamp', () => {
+  const lib = require('../scripts/lib/history');
+  const ts = lib.nowIsoZ();
+  assert.match(ts, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    'nowIsoZ must return ISO 8601 UTC Z format');
+});
+
+// ---------------------------------------------------------------------------
+// 2.1.3 — counterAppend creates directory and writes lean line to session file
+// ---------------------------------------------------------------------------
+test('history: counterAppend creates lean entry in counter file (REQ-HISTORY-106)', () => {
+  // We use CLAUDE_PLUGIN_DATA to isolate the historyPath, but counterPath uses
+  // os.homedir() directly. Use a real tmp dir for counter file isolation by
+  // writing to lib.counterPath(sid) after ensuring the dir exists.
+  const lib = require('../scripts/lib/history');
+  const sid = 'counter-write-test-' + Date.now();
+  const counterFilePath = lib.counterPath(sid);
+  // Ensure we clean up after test
+  try {
+    lib.counterAppend(sid, { id: 'toolu_X', status: 'running', started: lib.nowIsoZ() });
+    assert.ok(fs.existsSync(counterFilePath), 'counter file must be created');
+    const lines = fs.readFileSync(counterFilePath, 'utf8').split('\n').filter(Boolean);
+    assert.strictEqual(lines.length, 1, 'must contain exactly one line');
+    const obj = JSON.parse(lines[0]);
+    assert.strictEqual(obj.id, 'toolu_X');
+    assert.strictEqual(obj.status, 'running');
+  } finally {
+    try { fs.unlinkSync(counterFilePath); } catch (_) {}
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 2.1.5 — historyAppend creates directory and writes line (REQ-HISTORY-103)
+// ---------------------------------------------------------------------------
+test('history: historyAppend creates directory and writes JSONL line (REQ-HISTORY-103)', () => {
+  const lib = require('../scripts/lib/history');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-hist-'));
+  const origEnv = process.env.CLAUDE_PLUGIN_DATA;
+  try {
+    process.env.CLAUDE_PLUGIN_DATA = tmpDir;
+    lib.historyAppend({ status: 'running', id: 'x' });
+    const histFile = path.join(tmpDir, 'history.jsonl');
+    assert.ok(fs.existsSync(histFile), 'history file must be created');
+    const lines = fs.readFileSync(histFile, 'utf8').split('\n').filter(Boolean);
+    assert.strictEqual(lines.length, 1);
+    const obj = JSON.parse(lines[0]);
+    assert.strictEqual(obj.status, 'running');
+    assert.strictEqual(obj.id, 'x');
+  } finally {
+    if (origEnv === undefined) delete process.env.CLAUDE_PLUGIN_DATA;
+    else process.env.CLAUDE_PLUGIN_DATA = origEnv;
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 2.1.7 — historyAppend appends multiple lines
+// ---------------------------------------------------------------------------
+test('history: historyAppend appends multiple lines sequentially', () => {
+  const lib = require('../scripts/lib/history');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-hist2-'));
+  const origEnv = process.env.CLAUDE_PLUGIN_DATA;
+  try {
+    process.env.CLAUDE_PLUGIN_DATA = tmpDir;
+    lib.historyAppend({ id: '1', status: 'running' });
+    lib.historyAppend({ id: '2', status: 'done' });
+    lib.historyAppend({ id: '3', status: 'failed' });
+    const histFile = path.join(tmpDir, 'history.jsonl');
+    const lines = fs.readFileSync(histFile, 'utf8').split('\n').filter(Boolean);
+    assert.strictEqual(lines.length, 3, 'must have 3 lines');
+    assert.strictEqual(JSON.parse(lines[0]).id, '1');
+    assert.strictEqual(JSON.parse(lines[1]).id, '2');
+    assert.strictEqual(JSON.parse(lines[2]).id, '3');
+  } finally {
+    if (origEnv === undefined) delete process.env.CLAUDE_PLUGIN_DATA;
+    else process.env.CLAUDE_PLUGIN_DATA = origEnv;
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 2.1.9 — historyTrimIfNeeded: no trim at or below 600 lines (REQ-HISTORY-104)
+// ---------------------------------------------------------------------------
+test('history: historyTrimIfNeeded no-op when line count <= 600 (REQ-HISTORY-104)', () => {
+  const lib = require('../scripts/lib/history');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-trim-'));
+  const origEnv = process.env.CLAUDE_PLUGIN_DATA;
+  try {
+    process.env.CLAUDE_PLUGIN_DATA = tmpDir;
+    // Write exactly 600 lines
+    const histFile = path.join(tmpDir, 'history.jsonl');
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const lines600 = Array.from({ length: 600 }, (_, i) => JSON.stringify({ id: String(i) }));
+    fs.writeFileSync(histFile, lines600.join('\n') + '\n');
+    lib.historyTrimIfNeeded();
+    const after = fs.readFileSync(histFile, 'utf8').split('\n').filter(Boolean);
+    assert.strictEqual(after.length, 600, 'must still have 600 lines — no trim at threshold');
+  } finally {
+    if (origEnv === undefined) delete process.env.CLAUDE_PLUGIN_DATA;
+    else process.env.CLAUDE_PLUGIN_DATA = origEnv;
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 2.1.11 — historyTrimIfNeeded: trim fires at 601, keeps last 500 (REQ-HISTORY-104)
+// ---------------------------------------------------------------------------
+test('history: historyTrimIfNeeded trims to 500 when line count > 600 (REQ-HISTORY-104)', () => {
+  const lib = require('../scripts/lib/history');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-trim2-'));
+  const origEnv = process.env.CLAUDE_PLUGIN_DATA;
+  try {
+    process.env.CLAUDE_PLUGIN_DATA = tmpDir;
+    const histFile = path.join(tmpDir, 'history.jsonl');
+    fs.mkdirSync(tmpDir, { recursive: true });
+    // Write 601 lines; line N has id=N so we can verify we kept the last 500
+    const lines601 = Array.from({ length: 601 }, (_, i) => JSON.stringify({ id: String(i) }));
+    fs.writeFileSync(histFile, lines601.join('\n') + '\n');
+    lib.historyTrimIfNeeded();
+    const after = fs.readFileSync(histFile, 'utf8').split('\n').filter(Boolean);
+    assert.strictEqual(after.length, 500, 'must have exactly 500 lines after trim');
+    // The last 500 of 601 are ids 101..600
+    assert.strictEqual(JSON.parse(after[0]).id, '101', 'first line must be id 101 (oldest kept)');
+    assert.strictEqual(JSON.parse(after[499]).id, '600', 'last line must be id 600 (newest)');
+  } finally {
+    if (origEnv === undefined) delete process.env.CLAUDE_PLUGIN_DATA;
+    else process.env.CLAUDE_PLUGIN_DATA = origEnv;
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 2.1.13 — historyTrimIfNeeded: no-op when file does not exist
+// ---------------------------------------------------------------------------
+test('history: historyTrimIfNeeded is no-op when file does not exist', () => {
+  const lib = require('../scripts/lib/history');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-trim3-'));
+  const origEnv = process.env.CLAUDE_PLUGIN_DATA;
+  try {
+    process.env.CLAUDE_PLUGIN_DATA = tmpDir;
+    // Do NOT create history file
+    assert.doesNotThrow(() => lib.historyTrimIfNeeded(),
+      'historyTrimIfNeeded must not throw when file is absent');
+  } finally {
+    if (origEnv === undefined) delete process.env.CLAUDE_PLUGIN_DATA;
+    else process.env.CLAUDE_PLUGIN_DATA = origEnv;
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 2.1.15 — historyAppend + historyTrimIfNeeded integration: 601st append triggers trim
+// ---------------------------------------------------------------------------
+test('history: historyAppend followed by historyTrimIfNeeded trims correctly at 601', () => {
+  const lib = require('../scripts/lib/history');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-integtrim-'));
+  const origEnv = process.env.CLAUDE_PLUGIN_DATA;
+  try {
+    process.env.CLAUDE_PLUGIN_DATA = tmpDir;
+    const histFile = path.join(tmpDir, 'history.jsonl');
+    // Pre-write 600 lines
+    const lines600 = Array.from({ length: 600 }, (_, i) => JSON.stringify({ id: String(i) }));
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(histFile, lines600.join('\n') + '\n');
+    // historyAppend adds the 601st line, then calls historyTrimIfNeeded
+    lib.historyAppend({ id: '600' });
+    const after = fs.readFileSync(histFile, 'utf8').split('\n').filter(Boolean);
+    assert.strictEqual(after.length, 500, 'must trim to 500 after 601st append');
+  } finally {
+    if (origEnv === undefined) delete process.env.CLAUDE_PLUGIN_DATA;
+    else process.env.CLAUDE_PLUGIN_DATA = origEnv;
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
   }
 });

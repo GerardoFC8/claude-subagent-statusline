@@ -12,19 +12,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bats shellcheck jq
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Validate plugin manifest
-        run: jq -e . .claude-plugin/plugin.json > /dev/null
+        run: node -e "JSON.parse(require('fs').readFileSync('.claude-plugin/plugin.json','utf8'))"
 
       - name: Validate hooks declaration
-        run: jq -e . hooks/hooks.json > /dev/null
+        run: node -e "JSON.parse(require('fs').readFileSync('hooks/hooks.json','utf8'))"
 
-      - name: Shellcheck scripts
-        run: shellcheck scripts/*.sh
-
-      - name: Run bats tests
-        run: bats tests/
+      - name: Run tests
+        run: npm test

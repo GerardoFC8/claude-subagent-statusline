@@ -1,6 +1,6 @@
 // scripts/lib/history.js
 // CommonJS module. No top-level side effects (safe to require many times).
-// Slice 1: read-side + session-start helpers. Slice 2 will add write-side.
+// Slice 1: read-side + session-start helpers. Slice 2: write-side added.
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -108,6 +108,51 @@ function readCounters(sessionId) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// SLICE 2 — Write-side helpers
+// ---------------------------------------------------------------------------
+
+// Append a single JSONL line to the per-session counter file.
+// Best-effort: never throws to caller. mkdir -p for parent.
+function counterAppend(sessionId, obj) {
+  if (!sessionId) return;
+  const file = counterPath(sessionId);
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, JSON.stringify(obj) + '\n');
+  } catch (_) { /* swallow */ }
+}
+
+// Append a single JSONL line to the global history file.
+// Calls historyTrimIfNeeded after the append. Best-effort.
+function historyAppend(obj) {
+  const file = historyPath();
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, JSON.stringify(obj) + '\n');
+  } catch (_) { return; }
+  historyTrimIfNeeded();
+}
+
+// Ring buffer: when line count exceeds threshold, keep last KEEP via tmp + rename.
+// Threshold/keep configurable via env (parity with bash defaults).
+// Idempotent: safe to call when file does not exist (no-op).
+function historyTrimIfNeeded() {
+  const file = historyPath();
+  let data;
+  try { data = fs.readFileSync(file, 'utf8'); } catch (_) { return; }
+  // Count newlines the same way wc -l does.
+  let nl = 0;
+  for (let i = 0; i < data.length; i++) if (data.charCodeAt(i) === 10) nl++;
+  const threshold = parseInt(process.env.HISTORY_TRIM_THRESHOLD || '600', 10) || 600;
+  if (nl <= threshold) return;
+  const keep = parseInt(process.env.HISTORY_KEEP || '500', 10) || 500;
+  const lines = data.split('\n');
+  if (lines.length && lines[lines.length - 1] === '') lines.pop();
+  const tail = lines.slice(-keep);
+  atomicWrite(file, tail.join('\n') + '\n');
+}
+
 module.exports = {
   // Path helpers
   historyPath,
@@ -117,6 +162,10 @@ module.exports = {
   atomicWrite,
   // Read helpers
   readCounters,
+  // Write helpers (slice 2)
+  counterAppend,
+  historyAppend,
+  historyTrimIfNeeded,
   // Time
   nowIsoZ,
   nowEpochSeconds,
