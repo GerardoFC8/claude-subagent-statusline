@@ -47,9 +47,9 @@ test('manifest: plugin.json has name field', () => {
   assert.ok(typeof plugin.name === 'string' && plugin.name.length > 0, 'name field must exist');
 });
 
-test('manifest: plugin.json version equals 0.6.0 (bumped in slice 3)', () => {
+test('manifest: plugin.json version equals 0.6.1', () => {
   const plugin = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8'));
-  assert.strictEqual(plugin.version, '0.6.0');
+  assert.strictEqual(plugin.version, '0.6.1');
 });
 
 // ---------------------------------------------------------------------------
@@ -122,9 +122,9 @@ test('manifest: commands/ directory does NOT exist (slice 3 — entire directory
   assert.ok(!fs.existsSync(commandsDir), 'commands/ directory must be deleted in v0.6.0');
 });
 
-test('manifest: package.json version equals 0.6.0 (slice 3 bump)', () => {
+test('manifest: package.json version equals 0.6.1', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
-  assert.strictEqual(pkg.version, '0.6.0');
+  assert.strictEqual(pkg.version, '0.6.1');
 });
 
 test('manifest: no .sh files exist in repo tree (slice 3 — full bash removal)', () => {
