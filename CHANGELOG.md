@@ -7,6 +7,34 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.9.0] — 2026-05-07
+
+### Added
+
+- **Project folder at the start of the line**: the statusline now begins with the basename of `workspace.current_dir` (with `cwd` as fallback), rendered in **bold ANSI** for visual hierarchy without emoji clutter. When the working directory equals `$HOME`/`$USERPROFILE`, the folder renders as `~`. If neither field is present in the payload, the folder prefix is omitted entirely. Useful for distinguishing sessions when several Claude Code instances are open in different repos.
+
+- **Effort level inside the model bracket**: the current `effort.level` (`low` / `medium` / `high` / `xhigh` / `max`) appended to the model bracket as `[Opus 4.7 · high · $1.42]`. Reflects mid-session `/effort` changes. Omitted when the running model does not support the effort parameter.
+
+- **Rate limit segments**: the statusline renders a `Ventana 5h: X% (reset en Yh Zm) · Semana: X% (reset en Yd Zh)` segment after the failed counter, showing the live percentage of the 5-hour and 7-day rate limits and the time remaining until each window resets. Read from `rate_limits.five_hour.{used_percentage, resets_at}` and `rate_limits.seven_day.{used_percentage, resets_at}` in the Claude Code statusline payload. The percentage is color-coded by threshold (green <50%, yellow 50–79%, red 80%+) — same scale as the context-window bar — so you can spot rate-limit pressure at a glance. Each window renders independently; if your account does not expose rate limits, the segment is omitted entirely.
+
+- **Time delta formatter** for rate-limit reset countdowns: `Xm` under 1 hour, `Xh Ym` under 1 day, `Xd Yh` for longer windows. Past `resets_at` values render the percentage but suppress the "(reset en …)" suffix to avoid showing stale negative counts.
+
+### Changed
+
+- **Model name parsed from `model.id`**: when the payload exposes `model.id` like `claude-opus-4-7`, the bracket renders the parsed canonical form (`Opus 4.7`). When `model.id` is absent or non-canonical, the previous fallback runs: take `model.display_name` and strip any trailing `(... context)` annotation. The two-stage approach handles both extended-context variants (`Opus 4.7 (1M context)` → `[Opus 4.7]`) and any future model whose `id` may not match the regex.
+
+- **Elapsed-time segment moved**: the `⏱` session-elapsed segment now renders right after the context-window bar and before the `⚡ running` counter, instead of after the `✗ failed` counter. Brings the session timer to the most prominent position next to the context bar.
+
+- **Single `·` separator before the rate-limit segment** (instead of the compound `· │ ·` shipped briefly during iteration). Visually links rate limits as a continuous group with the failed counter while staying compact.
+
+- **Sub-agent counter words dropped**: `⚡ 2 running | ✓ 7 done │ ✗ 0 failed` is now `⚡ 2 │ ✓ 7 │ ✗ 0`. Saves ~17 characters and uses a single `│` separator throughout the counter group for visual consistency. The README documents what each icon means in a dedicated table.
+
+- **Folder prefix uses a plain space, not a separator**: the bold folder name at the start sits next to the model bracket separated only by a space (e.g. `my-app [Opus 4.7]`), instead of `my-app │ [Opus 4.7]`. The bold weight already provides enough visual hierarchy.
+
+- **Internal**: extracted `colorForPct(pct)`, `clampPct(value)`, `parseModelFromId(id)`, and `basenameForFolder(cwd)` helpers so the bar, both rate-limit segments, model parsing, and folder normalization share single implementations.
+
+---
+
 ## [0.7.0] — 2026-05-07
 
 ### Added
