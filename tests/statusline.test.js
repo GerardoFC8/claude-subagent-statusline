@@ -31,8 +31,8 @@ test('statusline: no session_id → all counters 0, empty bar', () => {
     const payload = JSON.stringify({ model: { display_name: 'TestModel' }, context_window: { used_percentage: 0 } });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(result.stdout.includes('0 running'), 'must show 0 running');
-    assert.ok(result.stdout.includes('0 done'), 'must show 0 done');
+    assert.ok(result.stdout.includes('⚡ 0'), 'must show 0 running');
+    assert.ok(result.stdout.includes('✓ 0'), 'must show 0 done');
     assert.ok(result.stdout.includes('░░░░░░░░░░'), 'must show 10 empty cells');
     assert.ok(result.stdout.includes('0%'), 'must show 0%');
   } finally {
@@ -100,9 +100,9 @@ test('statusline: missing counter JSONL → zero counters, exit 0', () => {
     const payload = JSON.stringify({ session_id: 'NOSESSION', model: { display_name: 'M' }, context_window: { used_percentage: 20 } });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(result.stdout.includes('⚡ 0 running'), 'must show 0 running');
-    assert.ok(result.stdout.includes('✓ 0 done'), 'must show 0 done');
-    assert.ok(result.stdout.includes('✗ 0 failed'), 'must show 0 failed');
+    assert.ok(result.stdout.includes('⚡ 0'), 'must show 0 running');
+    assert.ok(result.stdout.includes('✓ 0'), 'must show 0 done');
+    assert.ok(result.stdout.includes('✗ 0'), 'must show 0 failed');
   } finally {
     cleanupTmpHome(home);
   }
@@ -299,9 +299,9 @@ test('statusline: exact output format snapshot test', () => {
     assert.ok(result.stdout.includes('[claude-sonnet-4-6]'), 'must include model name');
     assert.ok(result.stdout.includes('████'), 'must include filled bar cells');
     assert.ok(result.stdout.includes('40%'), 'must show 40%');
-    assert.ok(result.stdout.includes('⚡ 1 running'), 'must show 1 running');
-    assert.ok(result.stdout.includes('✓ 2 done'), 'must show 2 done');
-    assert.ok(result.stdout.includes('✗ 1 failed'), 'must show 1 failed');
+    assert.ok(result.stdout.includes('⚡ 1'), 'must show 1 running');
+    assert.ok(result.stdout.includes('✓ 2'), 'must show 2 done');
+    assert.ok(result.stdout.includes('✗ 1'), 'must show 1 failed');
     assert.ok(result.stdout.includes('⏱'), 'must show elapsed segment');
     assert.ok(result.stdout.endsWith('\n'), 'must end with newline');
     assert.ok(result.stdout.includes('\x1b[32m'), 'must have green color at 40%');
@@ -328,8 +328,8 @@ test('statusline: counter dedup — running(A)+done(A) → running=0 done=1', ()
     const payload = JSON.stringify({ session_id: sid, model: { display_name: 'M' }, context_window: { used_percentage: 20 } });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(result.stdout.includes('0 running'), 'must show 0 running');
-    assert.ok(result.stdout.includes('1 done'), 'must show 1 done');
+    assert.ok(result.stdout.includes('⚡ 0'), 'must show 0 running');
+    assert.ok(result.stdout.includes('✓ 1'), 'must show 1 done');
   } finally {
     cleanupTmpHome(home);
   }
@@ -350,8 +350,8 @@ test('statusline: counter — failed excluded from running', () => {
     const payload = JSON.stringify({ session_id: sid, model: { display_name: 'M' }, context_window: { used_percentage: 20 } });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(result.stdout.includes('0 running'), 'failed must not count as running');
-    assert.ok(result.stdout.includes('1 failed'), 'must show 1 failed');
+    assert.ok(result.stdout.includes('⚡ 0'), 'failed must not count as running');
+    assert.ok(result.stdout.includes('✗ 1'), 'must show 1 failed');
   } finally {
     cleanupTmpHome(home);
   }
@@ -398,7 +398,7 @@ test('statusline: output includes failed segment always (even when 0)', () => {
     const payload = JSON.stringify({ session_id: sid, model: { display_name: 'M' }, context_window: { used_percentage: 20 } });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(result.stdout.includes('✗ 0 failed'), 'failed segment must always be rendered');
+    assert.ok(result.stdout.includes('✗ 0'), 'failed segment must always be rendered');
   } finally {
     cleanupTmpHome(home);
   }
@@ -685,6 +685,225 @@ test('statusline: elapsed segment ⏱ appears BEFORE the ⚡ running counter', (
     const idxRunning = result.stdout.indexOf('⚡');
     assert.ok(idxElapsed > 0 && idxRunning > 0, 'both segments must be present');
     assert.ok(idxElapsed < idxRunning, 'elapsed must come before running counter');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Model name parsed from `.model.id`
+// ---------------------------------------------------------------------------
+test('statusline: model.id "claude-opus-4-7" → "Opus 4.7"', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'MID1',
+      model: { id: 'claude-opus-4-7', display_name: 'Opus 4.7 (1M context)' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Opus 4.7]'), 'must parse Opus 4.7 from id');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: model.id "claude-sonnet-4-6" → "Sonnet 4.6"', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'MID2',
+      model: { id: 'claude-sonnet-4-6' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Sonnet 4.6]'), 'must parse Sonnet 4.6 from id');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: model.id "claude-haiku-4-5" → "Haiku 4.5"', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'MID3',
+      model: { id: 'claude-haiku-4-5' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Haiku 4.5]'), 'must parse Haiku 4.5 from id');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: malformed model.id falls back to display_name with strip', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'MID4',
+      model: { id: 'gpt-4-turbo', display_name: 'Custom Model (1M context)' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Custom Model]'), 'must fall back to stripped display_name');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Effort level segment — appended to model bracket
+// ---------------------------------------------------------------------------
+test('statusline: effort.level present → renders " · <level>" inside model bracket', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'EF1',
+      model: { id: 'claude-opus-4-7' },
+      effort: { level: 'high' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Opus 4.7 · high]'), 'must include effort level inside bracket');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: effort absent → no effort suffix', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'EF2',
+      model: { id: 'claude-opus-4-7' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Opus 4.7]'), 'bracket must contain only model when effort absent');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: model + effort + cost render in order [model · effort · $cost]', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'COMBO',
+      model: { id: 'claude-opus-4-7' },
+      effort: { level: 'medium' },
+      context_window: { used_percentage: 20 },
+      cost: { total_cost_usd: 2.5 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Opus 4.7 · medium · $2.50]'), 'bracket must combine all three');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Folder segment — basename of workspace.current_dir, bold at start
+// ---------------------------------------------------------------------------
+test('statusline: workspace.current_dir → bold folder basename at start', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'F1',
+      model: { id: 'claude-opus-4-7' },
+      workspace: { current_dir: '/home/foo/Projects/my-app' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    // Bold ANSI: \x1b[1m before "my-app", \x1b[22m after
+    assert.ok(result.stdout.includes('\x1b[1mmy-app\x1b[22m'), 'folder must render in bold');
+    // Folder must come BEFORE the model bracket
+    const idxFolder = result.stdout.indexOf('my-app');
+    const idxBracket = result.stdout.indexOf('[Opus 4.7');
+    assert.ok(idxFolder > 0 && idxBracket > 0, 'both must be present');
+    assert.ok(idxFolder < idxBracket, 'folder must precede model bracket');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: cwd as fallback when workspace.current_dir absent', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'F2',
+      model: { id: 'claude-opus-4-7' },
+      cwd: '/var/www/api-server',
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('api-server'), 'must fall back to cwd basename');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: folder absent → no folder prefix', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'F3',
+      model: { id: 'claude-opus-4-7' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.startsWith('[Opus 4.7]'), 'output must start with model bracket when no folder');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: folder equal to $HOME → renders "~"', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'F4',
+      model: { id: 'claude-opus-4-7' },
+      workspace: { current_dir: home },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('\x1b[1m~\x1b[22m'), 'home dir must render as bold "~"');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Separator simplification — between failed and Ventana 5h
+// ---------------------------------------------------------------------------
+test('statusline: separator between failed and Ventana 5h is single "·" (not "· │ ·")', () => {
+  const home = mkTmpHome();
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = JSON.stringify({
+      session_id: 'SEP1',
+      model: { id: 'claude-opus-4-7' },
+      context_window: { used_percentage: 20 },
+      rate_limits: { five_hour: { used_percentage: 10, resets_at: now + 600 } },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(!result.stdout.includes('· │ ·'), 'must not use compound "· │ ·" separator');
+    assert.ok(result.stdout.match(/✗ \d+ · Ventana 5h:/), 'must use single "·" between failed counter and Ventana');
   } finally {
     cleanupTmpHome(home);
   }

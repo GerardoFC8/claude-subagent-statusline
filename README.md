@@ -2,21 +2,35 @@
 
 # claude-subagent-statusline
 
-Plugin para Claude Code que monitoriza las delegaciones a sub-agentes (Task) en tiempo real y muestra una statusline en vivo con el uso de la ventana de contexto, el costo estimado de la sesión, los rate limits (5h y 7d), el conteo de delegaciones y el tiempo transcurrido. Mantiene un historial persistente y consultable de cada delegación entre sesiones. Node.js puro (18 o superior) — funciona en Windows, macOS y Linux.
+Plugin para Claude Code que muestra una statusline en vivo con la carpeta del proyecto, el modelo y effort activos, el costo estimado de la sesión, el uso de la ventana de contexto, los contadores de sub-agentes (Task) en tiempo real, el tiempo transcurrido y los rate limits de 5h y 7d. Mantiene además un historial persistente y consultable de cada delegación entre sesiones. Node.js puro (18 o superior) — funciona en Windows, macOS y Linux.
 
 ## Vista previa
 
 ```
-[Opus 4.7 · $1.42] ████░░░░░░ 42% │ ⏱ 14m 32s │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed · │ · Ventana 5h: 13% (reset en 1h 8m) · Semana: 4% (reset en 5d 15h)
+my-app [Opus 4.7 · high · $1.42] ████░░░░░░ 42% │ ⏱ 14m 32s │ ⚡ 2 │ ✓ 7 │ ✗ 0 · Ventana 5h: 13% (reset en 1h 8m) · Semana: 4% (reset en 5d 15h)
 ```
 
-La barra tiene 10 celdas y cambia de color según el porcentaje: verde por debajo del 50%, amarillo entre 50% y 79%, rojo a partir del 80%. Los segmentos `✗ failed` y `⏱` se muestran siempre — desde la primera invocación se ven `✗ 0 failed` y `⏱ 0s`.
+### Significado de los íconos
 
-El sufijo `· $X.XX` dentro del bracket del modelo muestra el costo estimado total de la sesión en USD, calculado del lado del cliente por Claude Code. Acumula el costo de todas las llamadas al API durante la sesión — tanto del agente principal como de cada sub-agente lanzado con la tool Task. Si tu versión de Claude Code no expone el campo `cost`, el sufijo se omite y el bracket queda como `[Modelo]`.
+| Ícono | Qué significa |
+|---|---|
+| `⚡` | Sub-agentes (Tasks) **en ejecución** en este momento |
+| `✓` | Sub-agentes **completados** con éxito |
+| `✗` | Sub-agentes que **fallaron** |
+| `⏱` | **Tiempo transcurrido** desde el inicio de la sesión |
 
-El segmento `Ventana 5h: X% (reset en …) · Semana: X% (reset en …)` muestra el uso actual de los rate limits de 5 horas y 7 días reportados por Claude Code, junto con el tiempo restante hasta el próximo reset. El porcentaje se colorea con la misma escala que la barra (verde / amarillo / rojo) para que detectes a simple vista cuándo te estás acercando al límite. El delta de reset se formatea como `Xm` por debajo de una hora, `Xh Ym` por debajo de un día, o `Xd Yh` para ventanas más largas. Si tu cuenta no expone rate limits, el segmento se omite entero.
+### Cómo se construye cada segmento
 
-El nombre del modelo se normaliza eliminando anotaciones tipo `(1M context)` o `(200K context)` para mantener el bracket compacto. Si Claude Code reporta `Opus 4.7 (1M context)`, en el statusline verás `[Opus 4.7]`.
+**Carpeta del proyecto** (`my-app` en negrita al inicio) — basename de `workspace.current_dir`, con `cwd` como fallback. Si el directorio coincide con tu `$HOME`, se muestra como `~`. Si Claude Code no expone ninguno de los dos campos, el prefijo se omite. Útil para distinguir sesiones cuando tenés varias instancias abiertas en distintos repos.
+
+**Bracket del modelo** (`[Opus 4.7 · high · $1.42]`) — combina tres datos:
+- *Nombre del modelo*: se obtiene parseando `model.id` (por ejemplo, `claude-opus-4-7` → `Opus 4.7`). Si el campo no está disponible, se cae al fallback `model.display_name` con anotaciones tipo `(1M context)` o `(200K context)` removidas para mantener el bracket compacto.
+- *Effort level*: el `effort.level` activo (`low`, `medium`, `high`, `xhigh` o `max`). Refleja cambios mid-sesión hechos con `/effort`. Si el modelo no soporta effort, se omite.
+- *Costo estimado*: el sufijo `· $X.XX` muestra el costo total de la sesión en USD, calculado del lado del cliente por Claude Code. Acumula el costo del agente principal **y** todos los sub-agentes lanzados con Task. Si Claude Code no expone `cost`, el sufijo se omite.
+
+**Barra de contexto** (`████░░░░░░ 42%`) — tiene 10 celdas y cambia de color según el porcentaje: verde por debajo del 50%, amarillo entre 50% y 79%, rojo a partir del 80%. Los contadores de sub-agentes (`⚡` `✓` `✗`) y el segmento `⏱` se muestran siempre, incluso cuando los valores son cero.
+
+**Rate limits** (`Ventana 5h: X% (reset en …) · Semana: X% (reset en …)`) — uso actual de los rate limits de 5 horas y 7 días reportados por Claude Code, junto con el tiempo restante hasta el próximo reset. El porcentaje se colorea con la misma escala que la barra (verde / amarillo / rojo) para que detectes a simple vista cuándo te estás acercando al límite. El delta de reset se formatea como `Xm` por debajo de una hora, `Xh Ym` por debajo de un día, o `Xd Yh` para ventanas más largas. Si tu cuenta no expone rate limits, el segmento se omite entero.
 
 ## Instalación
 
@@ -26,6 +40,27 @@ claude plugin install claude-subagent-statusline@claude-subagent-statusline
 ```
 
 > **Reinicia Claude Code después de instalar.** El archivo `settings.json` no se recarga en caliente — los hooks del plugin no se activarán hasta que la aplicación se reinicie por completo.
+
+## Actualizar a la última versión
+
+Si ya tenés el plugin instalado y querés traer la versión más reciente:
+
+```
+claude plugin update claude-subagent-statusline@claude-subagent-statusline
+```
+
+**Reinicia Claude Code** después de actualizar para que los hooks se recarguen. La autoconfiguración del statusLine se ejecuta en cada `SessionStart` y reescribe automáticamente la ruta absoluta del script para que apunte a la nueva versión — no hace falta tocar `settings.json` a mano.
+
+### Auto-update (opcional)
+
+Si preferís que las actualizaciones se apliquen solas en cada inicio de Claude Code:
+
+1. Corré `/plugin` dentro de Claude Code
+2. Cambiá a la pestaña **Marketplaces**
+3. Seleccioná `claude-subagent-statusline`
+4. Pulsá **Enable auto-update**
+
+Las marketplaces de terceros tienen auto-update desactivado por defecto — basta con prenderlo una vez. Después es transparente: cada vez que inicies Claude Code se actualiza sola si hay nueva versión.
 
 ## Configuración
 
@@ -107,7 +142,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (118 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (130 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 
