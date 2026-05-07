@@ -22,17 +22,21 @@ try {
   const description  = typeof ti.description   === 'string' ? ti.description   : '';
   const prompt       = typeof ti.prompt        === 'string' ? ti.prompt        : '';
   const cwd          = typeof p.cwd            === 'string' ? p.cwd            : '';
+  const background   = ti.run_in_background === true;
 
   const started = lib.nowIsoZ();
 
-  // Counter line — lean shape.
-  lib.counterAppend(sessionId, {
+  // Counter line — lean shape. `background` flag is omitted when false to keep
+  // foreground entries byte-identical to the v0.9.x format.
+  const counterEntry = {
     id: toolUseId,
     type: subagentType,
     desc: description,
     started,
     status: 'running',
-  });
+  };
+  if (background) counterEntry.background = true;
+  lib.counterAppend(sessionId, counterEntry);
 
   // History entry — full-fat seed.
   lib.historyAppend({
@@ -48,6 +52,7 @@ try {
     total_cost_usd: null,
     usage: null,
     cwd,
+    background,
   });
 } catch (_) { /* swallow any unexpected error */ }
 process.exit(0);

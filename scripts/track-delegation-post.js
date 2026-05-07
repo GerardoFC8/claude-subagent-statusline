@@ -27,6 +27,30 @@ try {
   if (!counterReadable) process.exit(0);
 
   const tr = (p.tool_response && typeof p.tool_response === 'object') ? p.tool_response : {};
+
+  // Background-agent launches return `tool_response.status === "async_launched"` with
+  // `agentId` and a near-zero duration_ms. The actual sub-agent runs after the hook
+  // returns; its real completion comes through SubagentStop. So we record the
+  // agent_id ↔ tool_use_id mapping and DO NOT close the entry.
+  if (tr.status === 'async_launched') {
+    const agentId = typeof tr.agentId === 'string' ? tr.agentId : '';
+    if (agentId) {
+      lib.counterAppend(sessionId, {
+        id: toolUseId,
+        agent_id: agentId,
+        status: 'bg_launched',
+      });
+      lib.historyAppend({
+        session_id: sessionId,
+        tool_use_id: toolUseId,
+        agent_id: agentId,
+        status: 'bg_launched',
+        launched_at: lib.nowIsoZ(),
+      });
+    }
+    process.exit(0);
+  }
+
   const usage = (tr.usage && typeof tr.usage === 'object') ? tr.usage : {};
 
   // numOrNull: returns value if finite number, else null.

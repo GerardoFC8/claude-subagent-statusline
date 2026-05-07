@@ -108,6 +108,28 @@ function readCounters(sessionId) {
   };
 }
 
+// Find the tool_use_id whose JSONL entry has a matching agent_id.
+// Used by the SubagentStop hook to correlate a background sub-agent's
+// completion to the original Agent delegation. Returns the most recent
+// match (last-write-wins) or null if not found / unreadable.
+function findToolUseIdByAgentId(sessionId, agentId) {
+  if (!sessionId || !agentId) return null;
+  const file = counterPath(sessionId);
+  let data;
+  try { data = fs.readFileSync(file, 'utf8'); } catch (_) { return null; }
+  let foundId = null;
+  for (const raw of data.split('\n')) {
+    if (!raw) continue;
+    let obj;
+    try { obj = JSON.parse(raw); } catch (_) { continue; }
+    if (!obj || typeof obj !== 'object') continue;
+    if (obj.agent_id === agentId && typeof obj.id === 'string' && obj.id !== '') {
+      foundId = obj.id;
+    }
+  }
+  return foundId;
+}
+
 // ---------------------------------------------------------------------------
 // SLICE 2 — Write-side helpers
 // ---------------------------------------------------------------------------
@@ -162,6 +184,7 @@ module.exports = {
   atomicWrite,
   // Read helpers
   readCounters,
+  findToolUseIdByAgentId,
   // Write helpers (slice 2)
   counterAppend,
   historyAppend,
