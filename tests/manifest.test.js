@@ -47,9 +47,9 @@ test('manifest: plugin.json has name field', () => {
   assert.ok(typeof plugin.name === 'string' && plugin.name.length > 0, 'name field must exist');
 });
 
-test('manifest: plugin.json version equals 0.10.0', () => {
+test('manifest: plugin.json version equals 0.10.1', () => {
   const plugin = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8'));
-  assert.strictEqual(plugin.version, '0.10.0');
+  assert.strictEqual(plugin.version, '0.10.1');
 });
 
 // ---------------------------------------------------------------------------
@@ -61,12 +61,20 @@ test('manifest: hooks.json is valid JSON', () => {
   assert.doesNotThrow(() => JSON.parse(fs.readFileSync(hooksPath, 'utf8')));
 });
 
-test('manifest: hooks.json declares the four expected hook events', () => {
+test('manifest: hooks.json declares the five expected hook events', () => {
   const hooks = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'hooks', 'hooks.json'), 'utf8'));
   assert.ok(hooks.hooks.PreToolUse, 'PreToolUse must exist');
   assert.ok(hooks.hooks.PostToolUse, 'PostToolUse must exist');
   assert.ok(hooks.hooks.PostToolUseFailure, 'PostToolUseFailure must exist');
   assert.ok(hooks.hooks.SessionStart, 'SessionStart must exist');
+  assert.ok(hooks.hooks.SubagentStop, 'SubagentStop must exist');
+});
+
+test('manifest: hooks.json SubagentStop command starts with node and references .js', () => {
+  const hooks = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'hooks', 'hooks.json'), 'utf8'));
+  const cmd = hooks.hooks.SubagentStop[0].hooks[0].command;
+  assert.ok(cmd.startsWith('node '), `SubagentStop command must start with "node ": ${cmd}`);
+  assert.ok(cmd.includes('track-subagent-stop.js'), `must reference track-subagent-stop.js: ${cmd}`);
 });
 
 test('manifest: hooks.json SessionStart command invokes auto-configure.js with node', () => {
@@ -122,9 +130,9 @@ test('manifest: commands/ directory does NOT exist (slice 3 — entire directory
   assert.ok(!fs.existsSync(commandsDir), 'commands/ directory must be deleted in v0.6.0');
 });
 
-test('manifest: package.json version equals 0.10.0', () => {
+test('manifest: package.json version equals 0.10.1', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
-  assert.strictEqual(pkg.version, '0.10.0');
+  assert.strictEqual(pkg.version, '0.10.1');
 });
 
 test('manifest: no .sh files exist in repo tree (slice 3 — full bash removal)', () => {

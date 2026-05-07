@@ -915,8 +915,7 @@ test('statusline: counter separators inside the counter group are "·" (item sep
   const home = mkTmpHome();
   try {
     const sid = 'CNT_SEP_' + Date.now();
-    const stateDir = path.join(mkTmpHome(), '.claude', 'state');
-    const home = path.dirname(path.dirname(stateDir));
+    const stateDir = path.join(home, '.claude', 'state');
     const cFile = path.join(stateDir, `delegations-${sid}.jsonl`);
     fs.mkdirSync(stateDir, { recursive: true });
     fs.writeFileSync(cFile, [

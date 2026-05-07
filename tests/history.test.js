@@ -198,6 +198,8 @@ test('history: module exports all required functions', () => {
     'nowEpochSeconds', 'isoToEpochSeconds',
     // slice 2 write-side
     'historyAppend', 'counterAppend', 'historyTrimIfNeeded', 'nowIsoZ',
+    // slice 3 background-agent correlation
+    'findToolUseIdByAgentId',
   ];
   for (const fn of required) {
     assert.strictEqual(typeof lib[fn], 'function', `${fn} must be exported`);

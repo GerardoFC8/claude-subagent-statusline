@@ -245,6 +245,37 @@ test('track-post: foreground (status != "async_launched") writes done as before'
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
 });
 
+test('track-post: async_launched without agentId falls through to done (no orphaning)', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-post-'));
+  const sid = 'post-bg-noid-' + Date.now();
+  createCounterFile(tmpDir, sid);
+  const p = {
+    session_id: sid,
+    tool_use_id: 'toolu_post123',
+    duration_ms: 3,
+    tool_response: { status: 'async_launched' /* no agentId */ },
+  };
+  runScript(SCRIPT, JSON.stringify(p), {
+    HOME: tmpDir,
+    USERPROFILE: tmpDir,
+    CLAUDE_PLUGIN_DATA: path.join(tmpDir, 'histdata'),
+  });
+  const cLines = readJsonl(counterFile(tmpDir, sid));
+  const bg = cLines.find(l => l.status === 'bg_launched');
+  const done = cLines.find(l => l.status === 'done');
+  assert.strictEqual(bg, undefined, 'must NOT write bg_launched without agentId');
+  assert.ok(done, 'must fall through to done so the entry is not orphaned');
+
+  // Also verify the history file received the done entry (not just the counter).
+  const hFile = path.join(tmpDir, 'histdata', 'history.jsonl');
+  assert.ok(fs.existsSync(hFile), 'history file must exist for fall-through path');
+  const hLines = readJsonl(hFile);
+  const hDone = hLines.find(l => l.status === 'done' && l.tool_use_id === 'toolu_post123');
+  assert.ok(hDone, 'history must record the fall-through done entry');
+
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+});
+
 // ---------------------------------------------------------------------------
 // 2.3.13 — numeric fields are null when missing from payload
 // ---------------------------------------------------------------------------
