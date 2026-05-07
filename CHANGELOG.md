@@ -7,6 +7,28 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.10.2] — 2026-05-07
+
+### Added
+
+- **Idle refresh for the statusline**: auto-configure now writes `"refreshInterval": 30` into the `statusLine` block of `~/.claude/settings.json`. Claude Code re-runs the statusline command on this interval in addition to its normal triggers (new assistant messages, `/compact`, permission/vim-mode changes), so time-based segments — the `5h` rate-limit countdown and the elapsed-time clock — stay live while the user is idle. Previously the statusline only refreshed when the user sent a message, which meant idle sessions saw a frozen countdown. Existing v0.10.1 installs are upgraded on the next `SessionStart` (the auto-configure flow now treats "command correct but no `refreshInterval`" as an `update` action). User-set values are preserved — if you already have your own `refreshInterval`, the plugin will not overwrite it.
+
+### Changed
+
+- **`scripts/lib/configure.js`** exports a new `DESIRED_REFRESH_INTERVAL = 30` constant and an enriched plan object (`desiredRefreshInterval`). `planAction` now considers `refreshInterval` presence when deciding `noop` vs `update`; `applyAction` writes the field while preserving any user-set value.
+- **`scripts/auto-configure.js`** — the manual-configuration snippet shown to users with a custom statusline now includes `"refreshInterval": 30` so a copy-paste switch matches the auto-configured shape.
+- **`README.md` / `README.en.md`** — the manual-configuration block now shows `refreshInterval: 30` and a short note explains why it is there.
+
+### Updating
+
+```
+claude plugin update claude-subagent-statusline@claude-subagent-statusline
+```
+
+Restart Claude Code to apply. On the next `SessionStart` the plugin will add `"refreshInterval": 30` to your `statusLine` block automatically (a one-time `settings.json.<timestamp>.bak` is written for safety). To opt out of the refresh interval, edit `~/.claude/settings.json` and set your own value — the plugin will preserve it on subsequent runs.
+
+---
+
 ## [0.10.1] — 2026-05-07
 
 Post-release polish driven by a two-round adversarial review (`judgment-day` skill — two parallel blind judges on Sonnet, fix agent on Haiku, then re-judge). All findings here are post-v0.10.0 corrections. No runtime behavior change to the v0.10.0 contract.

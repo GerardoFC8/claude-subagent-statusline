@@ -81,11 +81,14 @@ Si prefieres configurarlo a mano, añade esto a `~/.claude/settings.json` reempl
 ```json
 "statusLine": {
   "type": "command",
-  "command": "node \"<RUTA>/scripts/statusline.js\""
+  "command": "node \"<RUTA>/scripts/statusline.js\"",
+  "refreshInterval": 30
 }
 ```
 
 > **Importante**: usa la ruta absoluta. La variable `${CLAUDE_PLUGIN_ROOT}` solo se expande dentro del `hooks.json` del plugin — Claude Code no la sustituye en `statusLine.command` del `settings.json` del usuario. Por eso la autoconfiguración escribe la ruta absoluta y la actualiza en cada upgrade del plugin.
+
+> **`refreshInterval`** indica cada cuántos segundos Claude Code vuelve a ejecutar el comando aunque no haya mensajes nuevos. Mantiene vivo el contador de la ventana de 5h y el reloj de tiempo transcurrido cuando estás idle. La autoconfiguración usa `30` por defecto; si ya tenés tu propio valor el plugin lo respeta.
 
 ## Coexistencia con otro statusLine
 
