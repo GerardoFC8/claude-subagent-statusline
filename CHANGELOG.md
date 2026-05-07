@@ -11,11 +11,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Rate limit segments**: the statusline now renders a `🪟 Ventana 5h: X% (reset en Yh Zm) · Semana: X% (reset en Yd Zh)` segment after the elapsed time, showing the live percentage of the 5-hour and 7-day rate limits and the time remaining until each window resets. Read from `rate_limits.five_hour.{used_percentage, resets_at}` and `rate_limits.seven_day.{used_percentage, resets_at}` in the Claude Code statusline payload. The percentage is color-coded by threshold (green <50%, yellow 50–79%, red 80%+) — same scale as the context-window bar — so you can spot rate-limit pressure at a glance. Each window renders independently; if your account does not expose rate limits, the segment is omitted entirely.
+- **Rate limit segments**: the statusline now renders a `Ventana 5h: X% (reset en Yh Zm) · Semana: X% (reset en Yd Zh)` segment after the failed counter, showing the live percentage of the 5-hour and 7-day rate limits and the time remaining until each window resets. Read from `rate_limits.five_hour.{used_percentage, resets_at}` and `rate_limits.seven_day.{used_percentage, resets_at}` in the Claude Code statusline payload. The percentage is color-coded by threshold (green <50%, yellow 50–79%, red 80%+) — same scale as the context-window bar — so you can spot rate-limit pressure at a glance. Each window renders independently; if your account does not expose rate limits, the segment is omitted entirely.
 
 - **Time delta formatter** for rate-limit reset countdowns: `Xm` under 1 hour, `Xh Ym` under 1 day, `Xd Yh` for longer windows. Past `resets_at` values render the percentage but suppress the "(reset en …)" suffix to avoid showing stale negative counts.
 
 ### Changed
+
+- **Elapsed-time segment moved**: the `⏱` session-elapsed segment now renders right after the context-window bar and before the `⚡ running` counter, instead of after the `✗ failed` counter. Brings the session timer to the most prominent position next to the context bar.
 
 - **Model name normalization**: trailing `(... context)` annotations are stripped from the model bracket (e.g. `Opus 4.7 (1M context)` → `[Opus 4.7]`, `Sonnet 4.6 (200K context)` → `[Sonnet 4.6]`). Keeps the bracket compact when Claude Code reports the extended-context variant of a model. Names without that suffix are preserved unchanged.
 

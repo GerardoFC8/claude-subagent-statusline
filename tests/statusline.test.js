@@ -573,7 +573,6 @@ test('statusline: both rate limits present → joined "Ventana 5h ... · Semana 
     });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(result.stdout.includes('🪟'), 'must include rate-limit window emoji');
     assert.ok(result.stdout.includes('Ventana 5h:'), 'must label five-hour window');
     assert.ok(result.stdout.includes('13%'), 'must show 5h percentage');
     assert.ok(result.stdout.match(/reset en 1h \d+m/), 'must format 5h reset as "Xh Ym"');
@@ -618,7 +617,6 @@ test('statusline: rate_limits absent entirely → no rate-limit segment', () => 
     });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(!result.stdout.includes('🪟'), 'must omit window emoji when rate_limits absent');
     assert.ok(!result.stdout.includes('Ventana'), 'must omit Ventana label');
     assert.ok(!result.stdout.includes('Semana'), 'must omit Semana label');
   } finally {
@@ -663,6 +661,30 @@ test('statusline: used_percentage non-numeric → that window omitted', () => {
     assert.strictEqual(result.status, 0);
     assert.ok(!result.stdout.includes('Ventana 5h:'), 'must omit five_hour when percentage is non-numeric');
     assert.ok(result.stdout.includes('Semana:'), 'must still render valid seven_day');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: elapsed segment ⏱ appears BEFORE the ⚡ running counter', () => {
+  const home = mkTmpHome();
+  try {
+    const sid = 'ELAP_ORDER_' + Date.now();
+    const startFile = sessionStartFile(home, sid);
+    fs.mkdirSync(path.dirname(startFile), { recursive: true });
+    fs.writeFileSync(startFile, String(Math.floor(Date.now() / 1000) - 30));
+
+    const payload = JSON.stringify({
+      session_id: sid,
+      model: { display_name: 'M' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    const idxElapsed = result.stdout.indexOf('⏱');
+    const idxRunning = result.stdout.indexOf('⚡');
+    assert.ok(idxElapsed > 0 && idxRunning > 0, 'both segments must be present');
+    assert.ok(idxElapsed < idxRunning, 'elapsed must come before running counter');
   } finally {
     cleanupTmpHome(home);
   }
