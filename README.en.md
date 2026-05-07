@@ -7,7 +7,7 @@ A Claude Code plugin that tracks Task (sub-agent) delegations in real time and r
 ## Preview
 
 ```
-[Opus 4.7 · $1.42] ████░░░░░░ 42% │ ⏱ 14m 32s │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed │ Ventana 5h: 13% (reset en 1h 8m) · Semana: 4% (reset en 5d 15h)
+[Opus 4.7 · $1.42] ████░░░░░░ 42% │ ⏱ 14m 32s │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed · │ · Ventana 5h: 13% (reset en 1h 8m) · Semana: 4% (reset en 5d 15h)
 ```
 
 The bar is 10 cells wide and color-coded: green below 50%, yellow 50–79%, red 80%+. Both `✗ failed` and `⏱` segments render unconditionally — you get `✗ 0 failed` and `⏱ 0s` from the very first statusline call.

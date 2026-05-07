@@ -7,7 +7,7 @@ Plugin para Claude Code que monitoriza las delegaciones a sub-agentes (Task) en 
 ## Vista previa
 
 ```
-[Opus 4.7 · $1.42] ████░░░░░░ 42% │ ⏱ 14m 32s │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed │ Ventana 5h: 13% (reset en 1h 8m) · Semana: 4% (reset en 5d 15h)
+[Opus 4.7 · $1.42] ████░░░░░░ 42% │ ⏱ 14m 32s │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed · │ · Ventana 5h: 13% (reset en 1h 8m) · Semana: 4% (reset en 5d 15h)
 ```
 
 La barra tiene 10 celdas y cambia de color según el porcentaje: verde por debajo del 50%, amarillo entre 50% y 79%, rojo a partir del 80%. Los segmentos `✗ failed` y `⏱` se muestran siempre — desde la primera invocación se ven `✗ 0 failed` y `⏱ 0s`.

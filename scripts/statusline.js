@@ -139,9 +139,9 @@ function main() {
   const rl5h = rl ? buildRateLimit('Ventana 5h', rl.five_hour, nowSec) : '';
   const rl7d = rl ? buildRateLimit('Semana', rl.seven_day, nowSec) : '';
   let rateLimitSeg = '';
-  if (rl5h && rl7d) rateLimitSeg = ` │ ${rl5h} · ${rl7d}`;
-  else if (rl5h) rateLimitSeg = ` │ ${rl5h}`;
-  else if (rl7d) rateLimitSeg = ` │ ${rl7d}`;
+  if (rl5h && rl7d) rateLimitSeg = ` · │ · ${rl5h} · ${rl7d}`;
+  else if (rl5h) rateLimitSeg = ` · │ · ${rl5h}`;
+  else if (rl7d) rateLimitSeg = ` · │ · ${rl7d}`;
 
   const out =
     `[${model}${costSuffix}] ${color}${bar}${RESET} ${pctInt}%${elapsedSeg} │ ⚡ ${counters.running} running | ✓ ${counters.done} done${failedSeg}${rateLimitSeg}`;
