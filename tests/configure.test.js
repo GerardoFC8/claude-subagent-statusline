@@ -105,10 +105,21 @@ test('planAction: statusLine.command empty → action "create"', () => {
   assert.equal(plan.action, 'create');
 });
 
-test('planAction: ours and equal to desired → action "noop"', () => {
+test('planAction: ours, command equal, refreshInterval present → action "noop"', () => {
+  const desired = lib.desiredCommand(PLUGIN_ROOT);
+  const plan = lib.planAction(
+    { statusLine: { command: desired, refreshInterval: 30 } },
+    PLUGIN_OPTS,
+  );
+  assert.equal(plan.action, 'noop');
+});
+
+test('planAction: ours, command equal, refreshInterval missing → action "update"', () => {
+  // Upgrade path from v0.10.1 (no refreshInterval) to v0.10.2+ (refreshInterval=30).
   const desired = lib.desiredCommand(PLUGIN_ROOT);
   const plan = lib.planAction({ statusLine: { command: desired } }, PLUGIN_OPTS);
-  assert.equal(plan.action, 'noop');
+  assert.equal(plan.action, 'update');
+  assert.equal(plan.desiredRefreshInterval, 30);
 });
 
 test('planAction: ours but pointing to old bash form → action "update"', () => {
@@ -155,11 +166,33 @@ test('desiredCommand: produces absolute-path command without placeholder', () =>
 
 // ---------- applyAction() unit tests ----------
 
-test('applyAction: create produces statusLine block with type and command', () => {
+test('applyAction: create produces statusLine block with type, command, and default refreshInterval', () => {
   const plan = lib.planAction({}, PLUGIN_OPTS);
   const next = lib.applyAction(plan, {});
   assert.equal(next.statusLine.command, plan.desired);
   assert.equal(next.statusLine.type, 'command');
+  assert.equal(next.statusLine.refreshInterval, 30);
+});
+
+test('applyAction: preserves user-set refreshInterval when upgrading command', () => {
+  const original = {
+    statusLine: { type: 'command', command: 'bash "${CLAUDE_PLUGIN_ROOT}/scripts/statusline.sh"', refreshInterval: 10 },
+  };
+  const plan = lib.planAction(original, PLUGIN_OPTS);
+  assert.equal(plan.action, 'update');
+  const next = lib.applyAction(plan, original);
+  assert.equal(next.statusLine.command, plan.desired);
+  assert.equal(next.statusLine.refreshInterval, 10, 'user value must win over default');
+});
+
+test('applyAction: writes default refreshInterval when missing on upgrade', () => {
+  const desired = lib.desiredCommand(PLUGIN_ROOT);
+  const original = { statusLine: { type: 'command', command: desired } };
+  const plan = lib.planAction(original, PLUGIN_OPTS);
+  assert.equal(plan.action, 'update');
+  const next = lib.applyAction(plan, original);
+  assert.equal(next.statusLine.command, desired);
+  assert.equal(next.statusLine.refreshInterval, 30);
 });
 
 test('applyAction: update preserves other settings.json keys', () => {
@@ -234,7 +267,9 @@ test('auto-configure: noop when already correct', (t) => {
   // The script resolves pluginRoot from __dirname, so the desired command for
   // the noop fixture must match what the script will compute against REPO_ROOT.
   const desired = lib.desiredCommand(REPO_ROOT);
-  writeSettings(home, { statusLine: { type: 'command', command: desired } });
+  writeSettings(home, {
+    statusLine: { type: 'command', command: desired, refreshInterval: 30 },
+  });
 
   const before = fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf-8');
   const result = runAutoConfigure(home);
@@ -243,6 +278,25 @@ test('auto-configure: noop when already correct', (t) => {
 
   assert.equal(before, after, 'settings.json must not change');
   assert.equal(listBackups(home).length, 0, 'no backup on noop');
+});
+
+test('auto-configure: upgrades v0.10.1 settings (correct command, no refreshInterval) to add 30s default', (t) => {
+  const home = mkTmpHome();
+  t.after(() => cleanupTmpHome(home));
+
+  // Simulates an existing v0.10.1 install: command is already correct and absolute,
+  // but refreshInterval is missing — auto-configure must add it on next session start.
+  const desired = lib.desiredCommand(REPO_ROOT);
+  writeSettings(home, { theme: 'dark', statusLine: { type: 'command', command: desired } });
+
+  const result = runAutoConfigure(home);
+  assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+
+  const settings = readSettings(home);
+  assert.equal(settings.statusLine.command, desired, 'command must stay the same');
+  assert.equal(settings.statusLine.refreshInterval, 30, 'default refreshInterval must be added');
+  assert.equal(settings.theme, 'dark', 'unrelated keys must be preserved');
+  assert.equal(listBackups(home).length, 1, 'one backup must exist');
 });
 
 test('auto-configure: leaves custom statusLine intact and informs the user', (t) => {

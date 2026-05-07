@@ -57,7 +57,7 @@ function main() {
     process.stdout.write(
       '[claude-subagent-statusline] Detected a custom statusLine — keeping yours intact.\n' +
         '  To switch to this plugin, edit ~/.claude/settings.json and set:\n' +
-        `    "statusLine": { "type": "command", "command": "${escaped}" }\n` +
+        `    "statusLine": { "type": "command", "command": "${escaped}", "refreshInterval": ${plan.desiredRefreshInterval} }\n` +
         '  Set CSL_NO_AUTO_CONFIGURE=1 to silence this message.\n',
     );
     return 0;
