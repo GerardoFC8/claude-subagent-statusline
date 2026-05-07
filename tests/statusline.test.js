@@ -601,7 +601,9 @@ test('statusline: only five_hour present → renders only that window', () => {
     assert.strictEqual(result.status, 0);
     assert.ok(result.stdout.includes('5h:'), 'must render five_hour');
     assert.ok(!result.stdout.includes('Week:'), 'must NOT render seven_day when absent');
-    assert.ok(result.stdout.includes('reset in 30m'), 'sub-hour delta must format as "Xm"');
+    // Tolerance for slow CI runners: 1800s delta may render as 29 or 30 minutes
+    // depending on the gap between the test's clock capture and the script's execution.
+    assert.ok(result.stdout.match(/reset in (29|30)m\)/), 'sub-hour delta must format as "Xm"');
   } finally {
     cleanupTmpHome(home);
   }
