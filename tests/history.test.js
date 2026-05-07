@@ -367,6 +367,22 @@ test('history: historyTrimIfNeeded is no-op when file does not exist', () => {
 // ---------------------------------------------------------------------------
 // findToolUseIdByAgentId — correlates SubagentStop's agent_id back to tool_use_id
 // ---------------------------------------------------------------------------
+// Helper: redirect os.homedir() in-process for in-memory tests.
+// On Linux/macOS, os.homedir() reads $HOME. On Windows, it reads USERPROFILE.
+// Set both so the same test body works cross-platform.
+function withHomeDir(tmpDir, fn) {
+  const origHome = process.env.HOME;
+  const origProfile = process.env.USERPROFILE;
+  process.env.HOME = tmpDir;
+  process.env.USERPROFILE = tmpDir;
+  try {
+    return fn();
+  } finally {
+    if (origHome === undefined) delete process.env.HOME; else process.env.HOME = origHome;
+    if (origProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = origProfile;
+  }
+}
+
 test('history: findToolUseIdByAgentId returns matching tool_use_id when agent_id is in JSONL', () => {
   const lib = require('../scripts/lib/history');
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-findid-'));
@@ -382,17 +398,13 @@ test('history: findToolUseIdByAgentId returns matching tool_use_id when agent_id
       JSON.stringify({ id: 'toolu_B', agent_id: 'agent_B', status: 'bg_launched' }),
     ].join('\n') + '\n');
 
-    const orig = process.env.HOME;
-    process.env.HOME = tmpDir;
-    try {
+    withHomeDir(tmpDir, () => {
       assert.strictEqual(lib.findToolUseIdByAgentId(sid, 'agent_A'), 'toolu_A');
       assert.strictEqual(lib.findToolUseIdByAgentId(sid, 'agent_B'), 'toolu_B');
       assert.strictEqual(lib.findToolUseIdByAgentId(sid, 'agent_unknown'), null);
       assert.strictEqual(lib.findToolUseIdByAgentId('', 'agent_A'), null);
       assert.strictEqual(lib.findToolUseIdByAgentId(sid, ''), null);
-    } finally {
-      process.env.HOME = orig;
-    }
+    });
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
   }
@@ -406,9 +418,7 @@ test('history: bg flow — readCounters keeps id as running across bg_launched, 
     const dir = path.join(tmpDir, '.claude', 'state');
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `delegations-${sid}.jsonl`);
-    const orig = process.env.HOME;
-    process.env.HOME = tmpDir;
-    try {
+    withHomeDir(tmpDir, () => {
       // Step 1 — PreToolUse fires for a background launch
       fs.writeFileSync(file, JSON.stringify({ id: 'toolu_BG', status: 'running', started: new Date().toISOString(), background: true }) + '\n');
       let c = lib.readCounters(sid);
@@ -426,9 +436,7 @@ test('history: bg flow — readCounters keeps id as running across bg_launched, 
       c = lib.readCounters(sid);
       assert.strictEqual(c.running, 0, 'after SubagentStop done, must transition out of running');
       assert.strictEqual(c.done, 1, 'must count as done');
-    } finally {
-      process.env.HOME = orig;
-    }
+    });
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
   }
@@ -438,13 +446,9 @@ test('history: findToolUseIdByAgentId returns null when counter file does not ex
   const lib = require('../scripts/lib/history');
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-findid-'));
   try {
-    const orig = process.env.HOME;
-    process.env.HOME = tmpDir;
-    try {
+    withHomeDir(tmpDir, () => {
       assert.strictEqual(lib.findToolUseIdByAgentId('nonexistent', 'agent_X'), null);
-    } finally {
-      process.env.HOME = orig;
-    }
+    });
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
   }
