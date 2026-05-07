@@ -7,6 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.7.0] — 2026-05-07
+
+### Added
+
+- **Session cost in statusline**: the model bracket now includes a `· $X.XX` suffix showing the estimated total session cost in USD, read from `cost.total_cost_usd` in the Claude Code statusline payload. The cost is computed client-side and accumulates every API call in the session — both the main agent AND every sub-agent launched with the Task tool. When the field is absent (older Claude Code versions), the suffix is omitted and the bracket stays as `[Model]`. Example: `[Sonnet 4.6 · $1.42] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed │ ⏱ 14m 32s`.
+
+### Changed
+
+- **README simplified**: removed the redundant "Installing on Windows" / "Instalación en Windows" sections in both `README.md` and `README.en.md`. The main install block works identically on every supported platform — the OS-specific section was duplicated noise. Description and preview blocks updated to document the new cost suffix.
+
+---
+
 ## [0.6.2] — 2026-05-06
 
 ### Fixed

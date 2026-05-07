@@ -1,7 +1,7 @@
 {
   "name": "claude-subagent-statusline",
   "description": "Live statusline for Claude Code showing context window usage and active sub-agent (Task) delegations, with persistent delegation history. Zero bash dependencies — runs on Windows, macOS, and Linux natively via Node.js.",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "author": {
     "name": "Gerardo Franco",
     "url": "https://github.com/GerardoFC8"

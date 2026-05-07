@@ -2,15 +2,17 @@
 
 # claude-subagent-statusline
 
-Plugin para Claude Code que monitoriza las delegaciones a sub-agentes (Task) en tiempo real y muestra una statusline en vivo con el uso de la ventana de contexto, el conteo de delegaciones y el tiempo transcurrido de la sesión. Mantiene un historial persistente y consultable de cada delegación entre sesiones. Node.js puro (18 o superior) — funciona en Windows, macOS y Linux.
+Plugin para Claude Code que monitoriza las delegaciones a sub-agentes (Task) en tiempo real y muestra una statusline en vivo con el uso de la ventana de contexto, el costo estimado de la sesión, el conteo de delegaciones y el tiempo transcurrido. Mantiene un historial persistente y consultable de cada delegación entre sesiones. Node.js puro (18 o superior) — funciona en Windows, macOS y Linux.
 
 ## Vista previa
 
 ```
-[Opus 4.7] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed │ ⏱ 14m 32s
+[Opus 4.7 · $1.42] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed │ ⏱ 14m 32s
 ```
 
 La barra tiene 10 celdas y cambia de color según el porcentaje: verde por debajo del 50%, amarillo entre 50% y 79%, rojo a partir del 80%. Los segmentos `✗ failed` y `⏱` se muestran siempre — desde la primera invocación se ven `✗ 0 failed` y `⏱ 0s`.
+
+El sufijo `· $X.XX` dentro del bracket del modelo muestra el costo estimado total de la sesión en USD, calculado del lado del cliente por Claude Code. Acumula el costo de todas las llamadas al API durante la sesión — tanto del agente principal como de cada sub-agente lanzado con la tool Task. Si tu versión de Claude Code no expone el campo `cost`, el sufijo se omite y el bracket queda como `[Modelo]`.
 
 ## Instalación
 
@@ -43,19 +45,6 @@ Si prefieres configurarlo a mano, añade esto a `~/.claude/settings.json` reempl
 ```
 
 > **Importante**: usa la ruta absoluta. La variable `${CLAUDE_PLUGIN_ROOT}` solo se expande dentro del `hooks.json` del plugin — Claude Code no la sustituye en `statusLine.command` del `settings.json` del usuario. Por eso la autoconfiguración escribe la ruta absoluta y la actualiza en cada upgrade del plugin.
-
-## Instalación en Windows
-
-1. Instala Node.js 18 o superior desde [nodejs.org](https://nodejs.org/). Se recomienda la versión LTS.
-2. Instala el plugin:
-   ```
-   claude plugin marketplace add GerardoFC8/claude-subagent-statusline
-   claude plugin install claude-subagent-statusline@claude-subagent-statusline
-   ```
-3. Reinicia Claude Code.
-4. Edita `~/.claude/settings.json` y establece `statusLine.command` con el formato `node` indicado más arriba.
-
-No se necesita WSL, MSYS2 ni ninguna emulación de shell. El plugin es Node.js puro.
 
 ## Coexistencia con otro statusLine
 
@@ -114,7 +103,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (75 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (108 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 
