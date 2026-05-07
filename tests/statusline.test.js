@@ -453,7 +453,7 @@ test('statusline: cost field absent → bracket stays [model] with no suffix', (
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
     assert.ok(result.stdout.includes('[Sonnet]'), 'bracket must be plain when cost is absent');
-    assert.ok(!result.stdout.includes('·'), 'must omit · separator when cost is absent');
+    assert.ok(!result.stdout.includes('· $'), 'must omit "· $" cost suffix when cost is absent');
     assert.ok(!result.stdout.includes('$'), 'must omit $ when cost is absent');
   } finally {
     cleanupTmpHome(home);
@@ -556,9 +556,9 @@ test('statusline: model name without context suffix is preserved unchanged', () 
 });
 
 // ---------------------------------------------------------------------------
-// Rate limit segments — five_hour ("Ventana 5h") and seven_day ("Semana")
+// Rate limit segments — five_hour ("5h") and seven_day ("Week")
 // ---------------------------------------------------------------------------
-test('statusline: both rate limits present → joined "Ventana 5h ... · Semana ..."', () => {
+test('statusline: both rate limits present → joined "5h ... · Week ..."', () => {
   const home = mkTmpHome();
   try {
     const now = Math.floor(Date.now() / 1000);
@@ -573,15 +573,15 @@ test('statusline: both rate limits present → joined "Ventana 5h ... · Semana 
     });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(result.stdout.includes('Ventana 5h:'), 'must label five-hour window');
+    assert.ok(result.stdout.includes('5h:'), 'must label five-hour window');
     assert.ok(result.stdout.includes('13%'), 'must show 5h percentage');
-    assert.ok(result.stdout.match(/reset en 1h \d+m/), 'must format 5h reset as "Xh Ym"');
-    assert.ok(result.stdout.includes('Semana:'), 'must label seven-day window');
+    assert.ok(result.stdout.match(/reset in 1h \d+m/), 'must format 5h reset as "Xh Ym"');
+    assert.ok(result.stdout.includes('Week:'), 'must label seven-day window');
     assert.ok(result.stdout.includes('4%'), 'must show 7d percentage');
-    assert.ok(result.stdout.match(/reset en 5d \d+h/), 'must format 7d reset as "Xd Yh"');
-    const idx5h = result.stdout.indexOf('Ventana 5h');
-    const idx7d = result.stdout.indexOf('Semana');
-    assert.ok(idx5h > 0 && idx7d > idx5h, 'Ventana 5h must come before Semana');
+    assert.ok(result.stdout.match(/reset in 5d \d+h/), 'must format 7d reset as "Xd Yh"');
+    const idx5h = result.stdout.indexOf('5h:');
+    const idx7d = result.stdout.indexOf('Week:');
+    assert.ok(idx5h > 0 && idx7d > idx5h, '5h must come before Week');
   } finally {
     cleanupTmpHome(home);
   }
@@ -599,9 +599,9 @@ test('statusline: only five_hour present → renders only that window', () => {
     });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(result.stdout.includes('Ventana 5h:'), 'must render five_hour');
-    assert.ok(!result.stdout.includes('Semana:'), 'must NOT render seven_day when absent');
-    assert.ok(result.stdout.includes('reset en 30m'), 'sub-hour delta must format as "Xm"');
+    assert.ok(result.stdout.includes('5h:'), 'must render five_hour');
+    assert.ok(!result.stdout.includes('Week:'), 'must NOT render seven_day when absent');
+    assert.ok(result.stdout.includes('reset in 30m'), 'sub-hour delta must format as "Xm"');
   } finally {
     cleanupTmpHome(home);
   }
@@ -617,8 +617,8 @@ test('statusline: rate_limits absent entirely → no rate-limit segment', () => 
     });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(!result.stdout.includes('Ventana'), 'must omit Ventana label');
-    assert.ok(!result.stdout.includes('Semana'), 'must omit Semana label');
+    assert.ok(!result.stdout.includes('5h:'), 'must omit 5h label');
+    assert.ok(!result.stdout.includes('Week:'), 'must omit Week label');
   } finally {
     cleanupTmpHome(home);
   }
@@ -636,9 +636,9 @@ test('statusline: resets_at in the past → percentage shown but reset suffix om
     });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(result.stdout.includes('Ventana 5h:'), 'must still render the percentage');
+    assert.ok(result.stdout.includes('5h:'), 'must still render the percentage');
     assert.ok(result.stdout.includes('25%'), 'must show percentage');
-    assert.ok(!result.stdout.includes('(reset en'), 'must omit "reset en" when delta <= 0');
+    assert.ok(!result.stdout.includes('(reset in'), 'must omit "reset in" when delta <= 0');
   } finally {
     cleanupTmpHome(home);
   }
@@ -659,8 +659,8 @@ test('statusline: used_percentage non-numeric → that window omitted', () => {
     });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(!result.stdout.includes('Ventana 5h:'), 'must omit five_hour when percentage is non-numeric');
-    assert.ok(result.stdout.includes('Semana:'), 'must still render valid seven_day');
+    assert.ok(!result.stdout.includes('5h:'), 'must omit five_hour when percentage is non-numeric');
+    assert.ok(result.stdout.includes('Week:'), 'must still render valid seven_day');
   } finally {
     cleanupTmpHome(home);
   }
@@ -771,7 +771,7 @@ test('statusline: effort.level present → renders " · <level>" inside model br
     });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(result.stdout.includes('[Opus 4.7 · high]'), 'must include effort level inside bracket');
+    assert.ok(result.stdout.includes('[Opus 4.7 (high)]'), 'must include effort level inside bracket as (level)');
   } finally {
     cleanupTmpHome(home);
   }
@@ -805,7 +805,7 @@ test('statusline: model + effort + cost render in order [model · effort · $cos
     });
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
-    assert.ok(result.stdout.includes('[Opus 4.7 · medium · $2.50]'), 'bracket must combine all three');
+    assert.ok(result.stdout.includes('[Opus 4.7 (medium) · $2.50]'), 'bracket must combine all three');
   } finally {
     cleanupTmpHome(home);
   }
@@ -888,9 +888,9 @@ test('statusline: folder equal to $HOME → renders "~"', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Separator simplification — between failed and Ventana 5h
+// Separator hierarchy — `│` between sections, `·` between items inside a section
 // ---------------------------------------------------------------------------
-test('statusline: separator between failed and Ventana 5h is single "·" (not "· │ ·")', () => {
+test('statusline: separator before rate-limit section is "│" (section break)', () => {
   const home = mkTmpHome();
   try {
     const now = Math.floor(Date.now() / 1000);
@@ -903,7 +903,33 @@ test('statusline: separator between failed and Ventana 5h is single "·" (not "�
     const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
     assert.strictEqual(result.status, 0);
     assert.ok(!result.stdout.includes('· │ ·'), 'must not use compound "· │ ·" separator');
-    assert.ok(result.stdout.match(/✗ \d+ · Ventana 5h:/), 'must use single "·" between failed counter and Ventana');
+    assert.ok(result.stdout.match(/✗ \d+ │ 5h:/), 'must use "│" between failed counter and rate-limit section');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: counter separators inside the counter group are "·" (item separator)', () => {
+  const home = mkTmpHome();
+  try {
+    const sid = 'CNT_SEP_' + Date.now();
+    const stateDir = path.join(mkTmpHome(), '.claude', 'state');
+    const home = path.dirname(path.dirname(stateDir));
+    const cFile = path.join(stateDir, `delegations-${sid}.jsonl`);
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(cFile, [
+      JSON.stringify({ id: 'A', status: 'running', started: new Date().toISOString() }),
+      JSON.stringify({ id: 'B', status: 'done' }),
+    ].join('\n') + '\n');
+
+    const payload = JSON.stringify({
+      session_id: sid,
+      model: { id: 'claude-opus-4-7' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.match(/⚡ 1 · ✓ 1 · ✗ 0/), 'counters must be separated by "·" within the group');
   } finally {
     cleanupTmpHome(home);
   }

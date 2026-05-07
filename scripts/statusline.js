@@ -65,7 +65,7 @@ function buildRateLimit(label, rl, nowSec) {
   const resetsAt = rl.resets_at;
   if (typeof resetsAt === 'number' && Number.isFinite(resetsAt)) {
     const delta = resetsAt - nowSec;
-    if (delta > 0) resetStr = ` (reset en ${formatResetDelta(delta)})`;
+    if (delta > 0) resetStr = ` (reset in ${formatResetDelta(delta)})`;
   }
   return `${label}: ${c}${pInt}%${RESET}${resetStr}`;
 }
@@ -76,7 +76,7 @@ try {
   // Belt-and-suspenders: any uncaught throw still produces a valid exit 0.
   // Output a fallback line so the statusline is never blank.
   try {
-    process.stdout.write('[?] \x1b[32m░░░░░░░░░░\x1b[0m 0% │ ⚡ 0 │ ✓ 0 │ ✗ 0\n');
+    process.stdout.write('[?] \x1b[32m░░░░░░░░░░\x1b[0m 0% │ ⚡ 0 · ✓ 0 · ✗ 0\n');
   } catch (_) {}
   process.exit(0);
 }
@@ -100,11 +100,11 @@ function main() {
     model = model.replace(/\s*\([^)]*context[^)]*\)\s*$/i, '').trim() || '?';
   }
 
-  // Effort level (low / medium / high / xhigh / max) — appended to the model bracket.
+  // Effort level (low / medium / high / xhigh / max) — appended to the model bracket as `(level)`.
   let effortSuffix = '';
   const effortRaw = parsed && parsed.effort && parsed.effort.level;
   if (typeof effortRaw === 'string' && effortRaw.length > 0) {
-    effortSuffix = ` · ${effortRaw}`;
+    effortSuffix = ` (${effortRaw})`;
   }
 
   // Folder: basename of workspace.current_dir (or `cwd` fallback). Rendered bold at the start.
@@ -168,7 +168,7 @@ function main() {
     elapsedSeg = ` │ ⏱ ${fmt}`;
   }
 
-  const failedSeg = ` │ ✗ ${counters.failed}`;
+  const failedSeg = ` · ✗ ${counters.failed}`;
 
   let costSuffix = '';
   const costRaw = parsed && parsed.cost && parsed.cost.total_cost_usd;
@@ -176,17 +176,17 @@ function main() {
     costSuffix = ` · $${costRaw.toFixed(2)}`;
   }
 
-  // Rate limit segments — 5h window and 7d (Semana). Joined as one segment with `·` separator.
+  // Rate limit segments — 5h window and 7d (Week). Joined with `·` separator inside a `│`-delimited section.
   const rl = parsed && parsed.rate_limits;
-  const rl5h = rl ? buildRateLimit('Ventana 5h', rl.five_hour, nowSec) : '';
-  const rl7d = rl ? buildRateLimit('Semana', rl.seven_day, nowSec) : '';
+  const rl5h = rl ? buildRateLimit('5h', rl.five_hour, nowSec) : '';
+  const rl7d = rl ? buildRateLimit('Week', rl.seven_day, nowSec) : '';
   let rateLimitSeg = '';
-  if (rl5h && rl7d) rateLimitSeg = ` · ${rl5h} · ${rl7d}`;
-  else if (rl5h) rateLimitSeg = ` · ${rl5h}`;
-  else if (rl7d) rateLimitSeg = ` · ${rl7d}`;
+  if (rl5h && rl7d) rateLimitSeg = ` │ ${rl5h} · ${rl7d}`;
+  else if (rl5h) rateLimitSeg = ` │ ${rl5h}`;
+  else if (rl7d) rateLimitSeg = ` │ ${rl7d}`;
 
   const out =
-    `${folderSeg}[${model}${effortSuffix}${costSuffix}] ${color}${bar}${RESET} ${pctInt}%${elapsedSeg} │ ⚡ ${counters.running} │ ✓ ${counters.done}${failedSeg}${rateLimitSeg}`;
+    `${folderSeg}[${model}${effortSuffix}${costSuffix}] ${color}${bar}${RESET} ${pctInt}%${elapsedSeg} │ ⚡ ${counters.running} · ✓ ${counters.done}${failedSeg}${rateLimitSeg}`;
 
   process.stdout.write(out + '\n');
   process.exit(0);
