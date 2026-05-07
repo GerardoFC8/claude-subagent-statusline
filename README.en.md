@@ -7,7 +7,7 @@ A Claude Code plugin that renders a live statusline showing your project folder,
 ## Preview
 
 ```
-my-app [Opus 4.7 · high · $1.42] ████░░░░░░ 42% │ ⏱ 14m 32s │ ⚡ 2 │ ✓ 7 │ ✗ 0 · Ventana 5h: 13% (reset en 1h 8m) · Semana: 4% (reset en 5d 15h)
+my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m 32s │ ⚡ 2 · ✓ 7 · ✗ 0 │ 5h: 13% (reset in 1h 8m) · Week: 4% (reset in 5d 15h)
 ```
 
 ### What the icons mean
@@ -23,14 +23,16 @@ my-app [Opus 4.7 · high · $1.42] ████░░░░░░ 42% │ ⏱ 14
 
 **Project folder** (`my-app` in bold at the start) — basename of `workspace.current_dir`, with `cwd` as fallback. When the directory equals your `$HOME` (`$USERPROFILE` on Windows), the prefix renders as `~`. If neither field is in the payload, the prefix is omitted. Useful for distinguishing sessions when several Claude Code instances are open in different repos.
 
-**Model bracket** (`[Opus 4.7 · high · $1.42]`) — combines three pieces of info:
+**Model bracket** (`[Opus 4.7 (high) · $1.42]`) — combines three pieces of info:
 - *Model name*: parsed from `model.id` (e.g. `claude-opus-4-7` → `Opus 4.7`). If the field is missing or non-canonical, falls back to `model.display_name` with trailing `(1M context)` / `(200K context)` annotations stripped to keep the bracket compact.
-- *Effort level*: the live `effort.level` (`low`, `medium`, `high`, `xhigh`, or `max`). Reflects mid-session changes made via `/effort`. Omitted when the running model does not support the effort parameter.
+- *Effort level*: in parentheses after the model name appears the live `effort.level` (`low`, `medium`, `high`, `xhigh`, or `max`). Reflects mid-session changes made via `/effort`. Omitted when the running model does not support the effort parameter.
 - *Estimated cost*: the `· $X.XX` suffix shows the total session cost in USD, computed client-side by Claude Code. It accumulates every API call in the session — both the main agent **and** every sub-agent launched with the Task tool. If Claude Code does not expose the `cost` field, the suffix is omitted.
 
 **Context bar** (`████░░░░░░ 42%`) — 10 cells wide, color-coded: green below 50%, yellow 50–79%, red 80%+. The sub-agent counters (`⚡` `✓` `✗`) and the `⏱` segment render unconditionally, even when their values are zero.
 
-**Rate-limit windows** (`Ventana 5h: X% (reset en …) · Semana: X% (reset en …)`) — current usage of the 5-hour and 7-day rate-limit windows reported by Claude Code, alongside the time remaining until each window resets. The percentage uses the same color scale as the bar (green / yellow / red) so you can spot rate-limit pressure at a glance. The reset delta is formatted as `Xm` below one hour, `Xh Ym` below one day, or `Xd Yh` for longer windows. Labels are intentionally Spanish ("Ventana" = window, "Semana" = week). If your account does not expose rate limits, the whole segment is omitted.
+**Separator hierarchy** — the statusline uses two distinct separator characters with different meanings: `│` (heavy bar) marks **section breaks** (model bracket / bar and elapsed / counters / rate limits), while `·` (middle dot) separates **items inside a section** (between `⚡ ✓ ✗` and between `5h` and `Week`).
+
+**Rate-limit windows** (`5h: X% (reset in …) · Week: X% (reset in …)`) — current usage of the 5-hour and 7-day rate-limit windows reported by Claude Code, alongside the time remaining until each window resets. The percentage uses the same color scale as the bar (green / yellow / red) so you can spot rate-limit pressure at a glance. The reset delta is formatted as `Xm` below one hour, `Xh Ym` below one day, or `Xd Yh` for longer windows. If your account does not expose rate limits, the whole segment is omitted.
 
 ## Install
 
@@ -142,7 +144,7 @@ node --version   # must be >= 18
 npm test
 ```
 
-All changes must pass `npm test` (130 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
+All changes must pass `npm test` (131 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
 
 ## License
 

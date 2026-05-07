@@ -7,7 +7,7 @@ Plugin para Claude Code que muestra una statusline en vivo con la carpeta del pr
 ## Vista previa
 
 ```
-my-app [Opus 4.7 · high · $1.42] ████░░░░░░ 42% │ ⏱ 14m 32s │ ⚡ 2 │ ✓ 7 │ ✗ 0 · Ventana 5h: 13% (reset en 1h 8m) · Semana: 4% (reset en 5d 15h)
+my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m 32s │ ⚡ 2 · ✓ 7 · ✗ 0 │ 5h: 13% (reset in 1h 8m) · Week: 4% (reset in 5d 15h)
 ```
 
 ### Significado de los íconos
@@ -23,14 +23,16 @@ my-app [Opus 4.7 · high · $1.42] ████░░░░░░ 42% │ ⏱ 14
 
 **Carpeta del proyecto** (`my-app` en negrita al inicio) — basename de `workspace.current_dir`, con `cwd` como fallback. Si el directorio coincide con tu `$HOME`, se muestra como `~`. Si Claude Code no expone ninguno de los dos campos, el prefijo se omite. Útil para distinguir sesiones cuando tenés varias instancias abiertas en distintos repos.
 
-**Bracket del modelo** (`[Opus 4.7 · high · $1.42]`) — combina tres datos:
+**Bracket del modelo** (`[Opus 4.7 (high) · $1.42]`) — combina tres datos:
 - *Nombre del modelo*: se obtiene parseando `model.id` (por ejemplo, `claude-opus-4-7` → `Opus 4.7`). Si el campo no está disponible, se cae al fallback `model.display_name` con anotaciones tipo `(1M context)` o `(200K context)` removidas para mantener el bracket compacto.
-- *Effort level*: el `effort.level` activo (`low`, `medium`, `high`, `xhigh` o `max`). Refleja cambios mid-sesión hechos con `/effort`. Si el modelo no soporta effort, se omite.
+- *Effort level*: entre paréntesis después del modelo aparece el `effort.level` activo (`low`, `medium`, `high`, `xhigh` o `max`). Refleja cambios mid-sesión hechos con `/effort`. Si el modelo no soporta effort, se omite.
 - *Costo estimado*: el sufijo `· $X.XX` muestra el costo total de la sesión en USD, calculado del lado del cliente por Claude Code. Acumula el costo del agente principal **y** todos los sub-agentes lanzados con Task. Si Claude Code no expone `cost`, el sufijo se omite.
 
 **Barra de contexto** (`████░░░░░░ 42%`) — tiene 10 celdas y cambia de color según el porcentaje: verde por debajo del 50%, amarillo entre 50% y 79%, rojo a partir del 80%. Los contadores de sub-agentes (`⚡` `✓` `✗`) y el segmento `⏱` se muestran siempre, incluso cuando los valores son cero.
 
-**Rate limits** (`Ventana 5h: X% (reset en …) · Semana: X% (reset en …)`) — uso actual de los rate limits de 5 horas y 7 días reportados por Claude Code, junto con el tiempo restante hasta el próximo reset. El porcentaje se colorea con la misma escala que la barra (verde / amarillo / rojo) para que detectes a simple vista cuándo te estás acercando al límite. El delta de reset se formatea como `Xm` por debajo de una hora, `Xh Ym` por debajo de un día, o `Xd Yh` para ventanas más largas. Si tu cuenta no expone rate limits, el segmento se omite entero.
+**Jerarquía de separadores** — la statusline usa dos tipos de separador con un significado distinto: `│` (barra pesada) marca **secciones** (bracket del modelo / barra y elapsed / contadores / rate limits), mientras que `·` (medio) separa **items dentro de una sección** (entre `⚡ ✓ ✗` y entre `5h` y `Week`).
+
+**Rate limits** (`5h: X% (reset in …) · Week: X% (reset in …)`) — uso actual de los rate limits de 5 horas y 7 días reportados por Claude Code, junto con el tiempo restante hasta el próximo reset. El porcentaje se colorea con la misma escala que la barra (verde / amarillo / rojo) para que detectes a simple vista cuándo te estás acercando al límite. El delta de reset se formatea como `Xm` por debajo de una hora, `Xh Ym` por debajo de un día, o `Xd Yh` para ventanas más largas. Si tu cuenta no expone rate limits, el segmento se omite entero.
 
 ## Instalación
 
@@ -142,7 +144,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (130 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (131 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 

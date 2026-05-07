@@ -7,6 +7,32 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.9.1] — 2026-05-07
+
+Visual polish patch — no contract changes, just statusline format refinements driven by user feedback.
+
+### Changed
+
+- **Effort level uses parentheses inside the bracket**: `[Opus 4.7 (high) · $20.48]` instead of `[Opus 4.7 · high · $20.48]`. Matches how Claude Code itself displays effort and reads more naturally.
+
+- **Counter separators switched to `·`**: `⚡ 2 · ✓ 7 · ✗ 0` instead of `⚡ 2 │ ✓ 7 │ ✗ 0`. Counters are now visually grouped as a single section.
+
+- **Section break before rate limits is `│`**: `✗ 0 │ 5h: …` instead of `✗ 0 · Ventana 5h: …`. Establishes a clean separator hierarchy — `│` between sections, `·` between items inside a section.
+
+- **Rate-limit labels shortened and translated to English**: `Ventana 5h:` → `5h:`, `Semana:` → `Week:`. Saves ~10 characters and makes the line 100% English-or-symbol (matches `⏱`, `⚡`, `✓`, `✗`).
+
+- **Reset countdown phrasing in English**: `(reset in Xh Ym)` instead of `(reset en Xh Ym)`. Same change driver.
+
+### Updating
+
+```
+claude plugin update claude-subagent-statusline@claude-subagent-statusline
+```
+
+Restart Claude Code to apply.
+
+---
+
 ## [0.9.0] — 2026-05-07
 
 ### Added
