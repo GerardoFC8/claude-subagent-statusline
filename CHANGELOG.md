@@ -7,6 +7,42 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.10.1] — 2026-05-07
+
+Post-release polish driven by a two-round adversarial review (`judgment-day` skill — two parallel blind judges on Sonnet, fix agent on Haiku, then re-judge). All findings here are post-v0.10.0 corrections. No runtime behavior change to the v0.10.0 contract.
+
+### Fixed
+
+- **Background agents no longer orphan their `running` entry when the `async_launched` payload omits `agentId`** (`scripts/track-delegation-post.js`). Previously the code exited without writing `bg_launched` AND without closing the entry — `findToolUseIdByAgentId` could never correlate it, so `⚡` was permanently over-counted by one. Now the missing-`agentId` branch falls through to the foreground `done` path: the entry closes early (slightly inaccurately) instead of being stuck running forever. Added `tests/track-post.test.js` coverage for both the counter and the history file.
+
+- **Elapsed-time `<60s` branch and `secs % 60` modulo are now safe under floating-point inputs** (`scripts/statusline.js`). `Math.floor(secs)` is applied at the start of the elapsed segment so all downstream branches operate on integer seconds. Aligns with the same fix applied to `formatResetDelta` for the rate-limit reset countdown.
+
+- **Test isolation**: `tests/statusline.test.js` "counter separators inside the counter group" no longer leaks a temp directory on every run (the test was creating two `mkTmpHome()` directories due to a shadowing bug; only the inner one was cleaned up).
+
+- **`tests/manifest.test.js` now asserts the SubagentStop hook is registered** and validates its command path. Previously the test was named "four expected hook events" and never checked the v0.10.0 SubagentStop registration — accidental removal would have gone uncaught.
+
+### Changed
+
+- **`README.md` and `README.en.md`** — three sections updated to reflect the v0.10.0 model:
+  - *Troubleshooting*: documents the 3-line JSONL pattern for background agents (`running` → `bg_launched` → `done`) alongside the 2-line foreground pattern.
+  - *Coexistence with another statusLine*: documents `bg_launched` as a fourth status value with its mapping role, instructs external readers to exclude it from running/done/failed counts.
+  - *How it works*: now lists 6 numbered steps including the SubagentStop hook explanation between PostToolUseFailure and `statusline.js`.
+  - Test count bumped from 146 → 148 in the Contributing section.
+
+- **`tests/history.test.js`** exports-completeness test now includes `findToolUseIdByAgentId` so future accidental removal of that export would be caught.
+
+- **`CHANGELOG.md`** — v0.9.0 entry annotated with notes pointing readers to the v0.9.1 revisions of the effort format and the rate-limit separator. Helps anyone consulting historic entries from a rollback or audit.
+
+### Updating
+
+```
+claude plugin update claude-subagent-statusline@claude-subagent-statusline
+```
+
+Restart Claude Code to apply.
+
+---
+
 ## [0.10.0] — 2026-05-07
 
 ### Added
@@ -70,7 +106,7 @@ Restart Claude Code to apply.
 
 - **Project folder at the start of the line**: the statusline now begins with the basename of `workspace.current_dir` (with `cwd` as fallback), rendered in **bold ANSI** for visual hierarchy without emoji clutter. When the working directory equals `$HOME`/`$USERPROFILE`, the folder renders as `~`. If neither field is present in the payload, the folder prefix is omitted entirely. Useful for distinguishing sessions when several Claude Code instances are open in different repos.
 
-- **Effort level inside the model bracket**: the current `effort.level` (`low` / `medium` / `high` / `xhigh` / `max`) appended to the model bracket as `[Opus 4.7 · high · $1.42]`. Reflects mid-session `/effort` changes. Omitted when the running model does not support the effort parameter.
+- **Effort level inside the model bracket**: the current `effort.level` (`low` / `medium` / `high` / `xhigh` / `max`) appended to the model bracket as `[Opus 4.7 · high · $1.42]` (format later revised to `(high)` parens in v0.9.1 — see entry below). Reflects mid-session `/effort` changes. Omitted when the running model does not support the effort parameter.
 
 - **Rate limit segments**: the statusline renders a `Ventana 5h: X% (reset en Yh Zm) · Semana: X% (reset en Yd Zh)` segment after the failed counter, showing the live percentage of the 5-hour and 7-day rate limits and the time remaining until each window resets. Read from `rate_limits.five_hour.{used_percentage, resets_at}` and `rate_limits.seven_day.{used_percentage, resets_at}` in the Claude Code statusline payload. The percentage is color-coded by threshold (green <50%, yellow 50–79%, red 80%+) — same scale as the context-window bar — so you can spot rate-limit pressure at a glance. Each window renders independently; if your account does not expose rate limits, the segment is omitted entirely.
 
@@ -82,7 +118,7 @@ Restart Claude Code to apply.
 
 - **Elapsed-time segment moved**: the `⏱` session-elapsed segment now renders right after the context-window bar and before the `⚡ running` counter, instead of after the `✗ failed` counter. Brings the session timer to the most prominent position next to the context bar.
 
-- **Single `·` separator before the rate-limit segment** (instead of the compound `· │ ·` shipped briefly during iteration). Visually links rate limits as a continuous group with the failed counter while staying compact.
+- **Single `·` separator before the rate-limit segment** (instead of the compound `· │ ·` shipped briefly during iteration). Visually links rate limits as a continuous group with the failed counter while staying compact. *(Separator later promoted back to `│` in v0.9.1 to mark a clean section break — see entry below.)*
 
 - **Sub-agent counter words dropped**: `⚡ 2 running | ✓ 7 done │ ✗ 0 failed` is now `⚡ 2 │ ✓ 7 │ ✗ 0`. Saves ~17 characters and uses a single `│` separator throughout the counter group for visual consistency. The README documents what each icon means in a dedicated table.
 

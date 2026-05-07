@@ -89,7 +89,7 @@ If you prefer to configure it by hand, add this to `~/.claude/settings.json` rep
 
 ## Coexistence with an existing statusLine
 
-If you already have a statusLine renderer, you can read the delegation state from the JSONL file and append the counters to your existing output. The counter file lives at `~/.claude/state/delegations-<session_id>.jsonl`. Each entry has `id`, `status` (`running` | `done` | `failed`), and `started` fields. Unique-id counting gives you the running/done/failed totals.
+If you already have a statusLine renderer, you can read the delegation state from the JSONL file and append the counters to your existing output. The counter file lives at `~/.claude/state/delegations-<session_id>.jsonl`. Each entry has `id`, `status`, and `started` fields. Possible `status` values are `running`, `done`, `failed`, and `bg_launched` (the latter is a mapping line between `tool_use_id` and `agent_id` for background sub-agents launched with `run_in_background: true` — it is not a terminal state but is used by the `SubagentStop` hook to correlate actual completion). Unique-id counting by status (excluding `bg_launched`) gives you the running/done/failed totals.
 
 ## Persistent delegation history
 
@@ -108,7 +108,8 @@ The history file stores the **full prompt** and the **sub-agent's response text*
 2. **PreToolUse** fires when Claude Code dispatches a Task delegation — the hook appends a `"running"` entry to the per-session counter file AND a full seed entry (including full prompt) to the global history file.
 3. **PostToolUse** fires when the Task completes — the hook appends a `"done"` entry to both the counter file and the history file (with cost and token metrics).
 4. **PostToolUseFailure** fires when the Task fails — the hook appends a `"failed"` entry to both files (metrics are null since failure payloads do not reliably carry cost data).
-5. **`statusline.js`** reads the per-session counter JSONL, counts unique running/done/failed ids, computes session elapsed time from the oldest `started` entry, builds the progress bar from the context window percentage, and prints the formatted line on stdout.
+5. **SubagentStop** fires when a sub-agent actually completes — for foreground it is a silent tracking event with no action, but for background (where the prior `PostToolUse` wrote a `bg_launched` line with the `agent_id` instead of closing the entry), the hook looks up the original `tool_use_id` via `agent_id` and appends the corresponding `done` entry. This is what keeps the `⚡ running` counter honest while background sub-agents are truly in flight.
+6. **`statusline.js`** reads the per-session counter JSONL, counts unique running/done/failed ids, computes session elapsed time from the oldest `started` entry, builds the progress bar from the context window percentage, and prints the formatted line on stdout.
 
 All steps are stateless and append-only — no daemons, no locks, no in-place edits. The history file is trimmed atomically (temp-file + rename) when it exceeds 600 lines, keeping the last 500.
 
@@ -124,7 +125,7 @@ Verify the directory exists and is writable. If missing, create it:
 - Windows (PowerShell): `New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\state"`
 
 **Counter values look wrong**
-Inspect the raw JSONL for the current session. Each delegation produces two lines: one with `"status":"running"` (from PreToolUse) and one with `"status":"done"` or `"status":"failed"` (from PostToolUse or PostToolUseFailure). If you see only running lines, the PostToolUse hook may not have fired yet or the task is still in progress.
+Inspect the raw JSONL for the current session. **Foreground** delegations produce two lines: one with `"status":"running"` (from PreToolUse) and one with `"status":"done"` or `"status":"failed"` (from PostToolUse or PostToolUseFailure). **Background** delegations (`Agent` with `run_in_background: true`) produce **three**: the `running` from PreToolUse, a `bg_launched` with the `agent_id` (from PostToolUse when `tool_response.status === "async_launched"`), and finally a `done` from the `SubagentStop` hook when the sub-agent actually completes. If you see only running or `bg_launched` lines, the sub-agent may still be in flight or the corresponding hook has not fired yet.
 
 ## Known Limitations
 
@@ -144,7 +145,7 @@ node --version   # must be >= 18
 npm test
 ```
 
-All changes must pass `npm test` (146 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
+All changes must pass `npm test` (148 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
 
 ## License
 

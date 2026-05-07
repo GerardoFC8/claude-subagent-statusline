@@ -48,7 +48,7 @@ function clampPct(n) {
 
 function formatResetDelta(secs) {
   if (secs < 0) secs = 0;
-  if (secs < 60) return `${secs}s`;
+  if (secs < 60) return `${Math.floor(secs)}s`;
   if (secs < 3600) return `${Math.floor(secs / 60)}m`;
   if (secs < 86400) return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
   return `${Math.floor(secs / 86400)}d ${Math.floor((secs % 86400) / 3600)}h`;
@@ -155,7 +155,7 @@ function main() {
   const nowSec = lib.nowEpochSeconds();
   let elapsedSeg = '';
   if (baselineSec !== null) {
-    let secs = nowSec - baselineSec;
+    let secs = Math.floor(nowSec - baselineSec);
     if (secs < 0) secs = 0;
     let fmt;
     if (secs < 60) {

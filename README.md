@@ -89,7 +89,7 @@ Si prefieres configurarlo a mano, añade esto a `~/.claude/settings.json` reempl
 
 ## Coexistencia con otro statusLine
 
-Si ya tienes otro renderizador de statusLine, puedes leer el estado de las delegaciones desde el archivo JSONL y añadir los contadores a tu salida actual. El archivo de contadores está en `~/.claude/state/delegations-<session_id>.jsonl`. Cada entrada contiene los campos `id`, `status` (`running` | `done` | `failed`) y `started`. Contar identificadores únicos da los totales de en ejecución, completadas y fallidas.
+Si ya tienes otro renderizador de statusLine, puedes leer el estado de las delegaciones desde el archivo JSONL y añadir los contadores a tu salida actual. El archivo de contadores está en `~/.claude/state/delegations-<session_id>.jsonl`. Cada entrada contiene los campos `id`, `status` y `started`. Los valores posibles de `status` son `running`, `done`, `failed` y `bg_launched` (este último es una línea de mapping entre `tool_use_id` y `agent_id` para sub-agentes background lanzados con `run_in_background: true` — no representa un estado terminal, se usa para que el hook `SubagentStop` correlacione la finalización real). Contar identificadores únicos por status (excluyendo `bg_launched`) da los totales de en ejecución, completadas y fallidas.
 
 ## Historial persistente de delegaciones
 
@@ -108,7 +108,8 @@ El archivo de historial guarda el **prompt completo** y el **texto de respuesta 
 2. **PreToolUse** se dispara cuando Claude Code lanza una delegación de Task — el hook añade una entrada `"running"` al archivo de contadores de la sesión Y una entrada completa (incluyendo el prompt completo) al archivo de historial global.
 3. **PostToolUse** se dispara cuando la tarea termina — el hook añade una entrada `"done"` tanto al archivo de contadores como al historial (con métricas de coste y de tokens).
 4. **PostToolUseFailure** se dispara cuando la tarea falla — el hook añade una entrada `"failed"` a ambos archivos (las métricas son nulas porque los payloads de fallo no transportan datos de coste de forma fiable).
-5. **`statusline.js`** lee el JSONL de contadores de la sesión, cuenta los identificadores únicos en ejecución / completados / fallidos, calcula el tiempo transcurrido a partir de la entrada `started` más antigua, construye la barra de progreso a partir del porcentaje de la ventana de contexto e imprime la línea formateada en stdout.
+5. **SubagentStop** se dispara cuando un sub-agente termina realmente — para foreground es solo un evento de tracking sin acción, pero para background (donde el `PostToolUse` previo escribió una línea `bg_launched` con el `agent_id` en lugar de cerrar la entry), el hook busca el `tool_use_id` original vía `agent_id` y escribe la línea `done` correspondiente. Esto es lo que mantiene el contador `⚡ running` honesto mientras los sub-agentes background están realmente en vuelo.
+6. **`statusline.js`** lee el JSONL de contadores de la sesión, cuenta los identificadores únicos en ejecución / completados / fallidos, calcula el tiempo transcurrido a partir de la entrada `started` más antigua, construye la barra de progreso a partir del porcentaje de la ventana de contexto e imprime la línea formateada en stdout.
 
 Todos los pasos son sin estado y solo añaden contenido — sin daemons, sin bloqueos, sin ediciones in situ. El archivo de historial se recorta de forma atómica (archivo temporal + rename) cuando supera las 600 líneas, conservando las últimas 500.
 
@@ -124,7 +125,7 @@ Verifica que el directorio existe y se puede escribir. Si no existe, créalo:
 - Windows (PowerShell): `New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\state"`
 
 **Los contadores muestran valores raros**
-Inspecciona el JSONL crudo de la sesión actual. Cada delegación genera dos líneas: una con `"status":"running"` (de PreToolUse) y otra con `"status":"done"` o `"status":"failed"` (de PostToolUse o PostToolUseFailure). Si solo ves líneas `running`, puede que el hook PostToolUse aún no se haya disparado o que la tarea todavía esté en curso.
+Inspecciona el JSONL crudo de la sesión actual. Las delegaciones **foreground** generan dos líneas: una con `"status":"running"` (de PreToolUse) y otra con `"status":"done"` o `"status":"failed"` (de PostToolUse o PostToolUseFailure). Las delegaciones **background** (`Agent` con `run_in_background: true`) generan **tres**: la `running` de PreToolUse, una `bg_launched` con el `agent_id` (de PostToolUse cuando `tool_response.status === "async_launched"`), y finalmente una `done` desde el hook `SubagentStop` cuando el sub-agente realmente termina. Si solo ves líneas `running` o `bg_launched`, puede que el sub-agente aún esté en curso o que el hook correspondiente no se haya disparado.
 
 ## Limitaciones conocidas
 
@@ -144,7 +145,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (146 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (148 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 

@@ -47,8 +47,12 @@ try {
         status: 'bg_launched',
         launched_at: lib.nowIsoZ(),
       });
+      process.exit(0);
     }
-    process.exit(0);
+    // agentId missing — malformed async_launched payload. Cannot correlate to SubagentStop.
+    // Fall through to the foreground completion path (writes `done`) so the running entry
+    // doesn't get orphaned. Net effect: the agent is marked completed slightly early
+    // instead of stuck running forever.
   }
 
   const usage = (tr.usage && typeof tr.usage === 'object') ? tr.usage : {};
