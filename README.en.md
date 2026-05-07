@@ -14,7 +14,7 @@ my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m
 
 | Icon | Meaning |
 |---|---|
-| `⚡` | Sub-agents (Tasks) **currently running** |
+| `⚡` | Sub-agents (Tasks) **currently running** — includes both foreground (`Agent`) and background (`Agent` with `run_in_background: true`) launches |
 | `✓` | Sub-agents that **completed** successfully |
 | `✗` | Sub-agents that **failed** |
 | `⏱` | **Elapsed time** since the session started |
@@ -144,7 +144,7 @@ node --version   # must be >= 18
 npm test
 ```
 
-All changes must pass `npm test` (131 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
+All changes must pass `npm test` (146 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
 
 ## License
 

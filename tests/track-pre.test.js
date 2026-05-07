@@ -174,3 +174,38 @@ test('track-pre: timestamps in counter and history entries are UTC Z format', ()
   assert.match(hEntry.started, ISO_Z, 'history started must be Z format');
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
 });
+
+// ---------------------------------------------------------------------------
+// run_in_background flag — captured into the background field on entries
+// ---------------------------------------------------------------------------
+test('track-pre: run_in_background:true writes background:true on counter entry', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-pre-'));
+  const p = makePrePayload({ session_id: 'pre-bg-' + Date.now() });
+  p.tool_input.run_in_background = true;
+  runScript(SCRIPT, JSON.stringify(p), {
+    HOME: tmpDir,
+    USERPROFILE: tmpDir,
+    CLAUDE_PLUGIN_DATA: path.join(tmpDir, 'histdata'),
+  });
+  const cEntry = readJsonl(counterFile(tmpDir, p.session_id))[0];
+  const hEntry = readJsonl(path.join(tmpDir, 'histdata', 'history.jsonl'))[0];
+  assert.strictEqual(cEntry.background, true, 'counter entry must mark background:true');
+  assert.strictEqual(hEntry.background, true, 'history entry must mark background:true');
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+});
+
+test('track-pre: foreground (no run_in_background) omits background key from counter', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-pre-'));
+  const p = makePrePayload({ session_id: 'pre-fg-' + Date.now() });
+  // tool_input.run_in_background is intentionally not set
+  runScript(SCRIPT, JSON.stringify(p), {
+    HOME: tmpDir,
+    USERPROFILE: tmpDir,
+    CLAUDE_PLUGIN_DATA: path.join(tmpDir, 'histdata'),
+  });
+  const cEntry = readJsonl(counterFile(tmpDir, p.session_id))[0];
+  const hEntry = readJsonl(path.join(tmpDir, 'histdata', 'history.jsonl'))[0];
+  assert.ok(!('background' in cEntry), 'counter entry must NOT have background key in foreground case');
+  assert.strictEqual(hEntry.background, false, 'history entry must mark background:false explicitly');
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+});

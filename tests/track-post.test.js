@@ -185,6 +185,67 @@ test('track-post: response is truncated at 16384 chars with ellipsis marker', ()
 });
 
 // ---------------------------------------------------------------------------
+// async_launched branch — background-agent launches must NOT close the entry
+// ---------------------------------------------------------------------------
+test('track-post: tool_response.status="async_launched" writes bg_launched mapping, NOT done', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-post-'));
+  const sid = 'post-bg-' + Date.now();
+  createCounterFile(tmpDir, sid);
+  const p = {
+    session_id: sid,
+    tool_use_id: 'toolu_post123',
+    duration_ms: 3,
+    tool_response: {
+      status: 'async_launched',
+      agentId: 'ae8b0c9eb8c3f70bd',
+    },
+  };
+  const { status } = runScript(SCRIPT, JSON.stringify(p), {
+    HOME: tmpDir,
+    USERPROFILE: tmpDir,
+    CLAUDE_PLUGIN_DATA: path.join(tmpDir, 'histdata'),
+  });
+  assert.strictEqual(status, 0, 'must exit 0');
+
+  // Counter file: original running entry + new bg_launched entry. NO 'done' line.
+  const cLines = readJsonl(counterFile(tmpDir, sid));
+  const bg = cLines.find(l => l.status === 'bg_launched');
+  const done = cLines.find(l => l.status === 'done');
+  assert.ok(bg, 'must append a bg_launched entry');
+  assert.strictEqual(bg.id, 'toolu_post123');
+  assert.strictEqual(bg.agent_id, 'ae8b0c9eb8c3f70bd', 'must record agentId for SubagentStop correlation');
+  assert.strictEqual(done, undefined, 'must NOT write done — sub-agent is still running async');
+
+  // History file: bg_launched entry written
+  const hFile = path.join(tmpDir, 'histdata', 'history.jsonl');
+  const hLines = readJsonl(hFile);
+  const hBg = hLines.find(l => l.status === 'bg_launched');
+  assert.ok(hBg, 'history must record bg_launched mapping');
+  assert.strictEqual(hBg.tool_use_id, 'toolu_post123');
+  assert.strictEqual(hBg.agent_id, 'ae8b0c9eb8c3f70bd');
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+});
+
+test('track-post: foreground (status != "async_launched") writes done as before', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-post-'));
+  const sid = 'post-fg-' + Date.now();
+  createCounterFile(tmpDir, sid);
+  const p = makePostPayload({ session_id: sid });
+  // tool_response.status is not 'async_launched' (it has cost/usage/content instead)
+  runScript(SCRIPT, JSON.stringify(p), {
+    HOME: tmpDir,
+    USERPROFILE: tmpDir,
+    CLAUDE_PLUGIN_DATA: path.join(tmpDir, 'histdata'),
+  });
+  const cLines = readJsonl(counterFile(tmpDir, sid));
+  const done = cLines.find(l => l.status === 'done');
+  const bg = cLines.find(l => l.status === 'bg_launched');
+  assert.ok(done, 'foreground path must still write a done entry');
+  assert.strictEqual(bg, undefined, 'foreground path must NOT write bg_launched');
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+});
+
+// ---------------------------------------------------------------------------
 // 2.3.13 — numeric fields are null when missing from payload
 // ---------------------------------------------------------------------------
 test('track-post: numeric fields default to null when absent', () => {

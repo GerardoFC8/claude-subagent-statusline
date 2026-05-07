@@ -14,7 +14,7 @@ my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m
 
 | Ícono | Qué significa |
 |---|---|
-| `⚡` | Sub-agentes (Tasks) **en ejecución** en este momento |
+| `⚡` | Sub-agentes (Tasks) **en ejecución** en este momento — incluye los lanzados en foreground (`Agent`) Y los background (`Agent` con `run_in_background: true`) |
 | `✓` | Sub-agentes **completados** con éxito |
 | `✗` | Sub-agentes que **fallaron** |
 | `⏱` | **Tiempo transcurrido** desde el inicio de la sesión |
@@ -144,7 +144,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (131 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (146 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 

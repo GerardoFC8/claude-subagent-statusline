@@ -7,6 +7,37 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.10.0] — 2026-05-07
+
+### Added
+
+- **Accurate counter for background sub-agents**: when an `Agent` tool is invoked with `tool_input.run_in_background: true`, the sub-agent runs asynchronously — `PostToolUse` fires almost immediately with `tool_response.status: "async_launched"` while the actual work is still in progress (often 10s+ later). Until v0.10.0 the plugin treated that immediate `PostToolUse` as task completion, so background agents counted as `✓ done` the moment they were launched and never appeared as `⚡ running`. Now the plugin distinguishes the two flows:
+
+  - **PreToolUse** captures `tool_input.run_in_background` into a `background: true` flag on the counter and history entries.
+  - **PostToolUse** branches on `tool_response.status`. `async_launched` writes a lightweight `bg_launched` mapping line `{id, agent_id, status: "bg_launched"}` and **does not** close the entry. Foreground completions still write `done` exactly like before.
+  - **`SubagentStop` (NEW hook)** is the actual completion signal for background agents. It receives the `agent_id` of the sub-agent that just finished, looks it up in the counter file via the `bg_launched` mapping, and writes a proper `done` entry against the original `tool_use_id`. For foreground sub-agents, `SubagentStop` fires too (just before `PostToolUse`) — but with no matching `bg_launched` entry it's a silent no-op, so foreground accounting stays unchanged.
+
+  Net effect: `⚡ N` reflects the real number of sub-agents working at any moment, foreground and background alike. `✓ done` only ticks up when a sub-agent has actually finished.
+
+- **`findToolUseIdByAgentId(sessionId, agentId)`** helper in `scripts/lib/history.js` — scans the per-session counter JSONL for the most recent entry whose `agent_id` matches and returns the corresponding `tool_use_id`, or `null` when no match (foreground case) or the file is missing.
+
+- **`scripts/track-subagent-stop.js`** — new SubagentStop hook handler. Read-then-correlate-then-append, exit 0 in all paths, behaves silently for foreground.
+
+### Changed
+
+- **`scripts/track-delegation-pre.js`** captures `tool_input.run_in_background`. When true, sets `background: true` on the counter entry. Foreground entries stay byte-identical to the v0.9.x format (the `background` key is omitted on foreground to preserve compatibility with any external tooling that reads the counter file).
+- **`scripts/track-delegation-post.js`** detects `tool_response.status === "async_launched"` and writes a `bg_launched` mapping instead of closing the entry. Existing foreground branch is unchanged.
+- **`hooks/hooks.json`** registers the new `SubagentStop` event handler.
+
+### Backward compatibility
+
+The counter JSONL schema is additive only:
+- Existing entries (without `background` or `agent_id` fields) keep their meaning.
+- `bg_launched` is a new status string. `readCounters` ignores any status string outside `running` / `done` / `failed`, so the entry is invisible to the counter view but discoverable by `findToolUseIdByAgentId`.
+- A user upgrading mid-session will see correct counts for any new sub-agent launched after the upgrade. In-flight background agents from before the upgrade may remain marked `done` (the way v0.9.x left them) — restarting Claude Code clears the per-session counter file.
+
+---
+
 ## [0.9.1] — 2026-05-07
 
 Visual polish patch — no contract changes, just statusline format refinements driven by user feedback.

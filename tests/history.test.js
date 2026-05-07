@@ -364,6 +364,92 @@ test('history: historyTrimIfNeeded is no-op when file does not exist', () => {
 // ---------------------------------------------------------------------------
 // 2.1.15 — historyAppend + historyTrimIfNeeded integration: 601st append triggers trim
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// findToolUseIdByAgentId — correlates SubagentStop's agent_id back to tool_use_id
+// ---------------------------------------------------------------------------
+test('history: findToolUseIdByAgentId returns matching tool_use_id when agent_id is in JSONL', () => {
+  const lib = require('../scripts/lib/history');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-findid-'));
+  try {
+    const sid = 'find-' + Date.now();
+    const dir = path.join(tmpDir, '.claude', 'state');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `delegations-${sid}.jsonl`);
+    fs.writeFileSync(file, [
+      JSON.stringify({ id: 'toolu_A', status: 'running', started: new Date().toISOString() }),
+      JSON.stringify({ id: 'toolu_A', agent_id: 'agent_A', status: 'bg_launched' }),
+      JSON.stringify({ id: 'toolu_B', status: 'running', started: new Date().toISOString() }),
+      JSON.stringify({ id: 'toolu_B', agent_id: 'agent_B', status: 'bg_launched' }),
+    ].join('\n') + '\n');
+
+    const orig = process.env.HOME;
+    process.env.HOME = tmpDir;
+    try {
+      assert.strictEqual(lib.findToolUseIdByAgentId(sid, 'agent_A'), 'toolu_A');
+      assert.strictEqual(lib.findToolUseIdByAgentId(sid, 'agent_B'), 'toolu_B');
+      assert.strictEqual(lib.findToolUseIdByAgentId(sid, 'agent_unknown'), null);
+      assert.strictEqual(lib.findToolUseIdByAgentId('', 'agent_A'), null);
+      assert.strictEqual(lib.findToolUseIdByAgentId(sid, ''), null);
+    } finally {
+      process.env.HOME = orig;
+    }
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+test('history: bg flow — readCounters keeps id as running across bg_launched, transitions to done after SubagentStop', () => {
+  const lib = require('../scripts/lib/history');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-bgflow-'));
+  try {
+    const sid = 'bgflow-' + Date.now();
+    const dir = path.join(tmpDir, '.claude', 'state');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `delegations-${sid}.jsonl`);
+    const orig = process.env.HOME;
+    process.env.HOME = tmpDir;
+    try {
+      // Step 1 — PreToolUse fires for a background launch
+      fs.writeFileSync(file, JSON.stringify({ id: 'toolu_BG', status: 'running', started: new Date().toISOString(), background: true }) + '\n');
+      let c = lib.readCounters(sid);
+      assert.strictEqual(c.running, 1, 'after PreToolUse, must count as running');
+      assert.strictEqual(c.done, 0);
+
+      // Step 2 — PostToolUse(async_launched) appends bg_launched mapping (NOT done)
+      fs.appendFileSync(file, JSON.stringify({ id: 'toolu_BG', agent_id: 'agent_BG', status: 'bg_launched' }) + '\n');
+      c = lib.readCounters(sid);
+      assert.strictEqual(c.running, 1, 'after bg_launched, must STILL count as running');
+      assert.strictEqual(c.done, 0, 'must NOT count as done — sub-agent still working');
+
+      // Step 3 — SubagentStop appends done
+      fs.appendFileSync(file, JSON.stringify({ id: 'toolu_BG', ended: new Date().toISOString(), status: 'done' }) + '\n');
+      c = lib.readCounters(sid);
+      assert.strictEqual(c.running, 0, 'after SubagentStop done, must transition out of running');
+      assert.strictEqual(c.done, 1, 'must count as done');
+    } finally {
+      process.env.HOME = orig;
+    }
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+test('history: findToolUseIdByAgentId returns null when counter file does not exist', () => {
+  const lib = require('../scripts/lib/history');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-findid-'));
+  try {
+    const orig = process.env.HOME;
+    process.env.HOME = tmpDir;
+    try {
+      assert.strictEqual(lib.findToolUseIdByAgentId('nonexistent', 'agent_X'), null);
+    } finally {
+      process.env.HOME = orig;
+    }
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
 test('history: historyAppend followed by historyTrimIfNeeded trims correctly at 601', () => {
   const lib = require('../scripts/lib/history');
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csl-integtrim-'));
