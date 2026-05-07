@@ -92,8 +92,14 @@ function main() {
 
   const failedSeg = ` │ ✗ ${counters.failed} failed`;
 
+  let costSuffix = '';
+  const costRaw = parsed && parsed.cost && parsed.cost.total_cost_usd;
+  if (typeof costRaw === 'number' && Number.isFinite(costRaw) && costRaw >= 0) {
+    costSuffix = ` · $${costRaw.toFixed(2)}`;
+  }
+
   const out =
-    `[${model}] ${color}${bar}${RESET} ${pctInt}% │ ⚡ ${counters.running} running | ✓ ${counters.done} done${failedSeg}${elapsedSeg}`;
+    `[${model}${costSuffix}] ${color}${bar}${RESET} ${pctInt}% │ ⚡ ${counters.running} running | ✓ ${counters.done} done${failedSeg}${elapsedSeg}`;
 
   process.stdout.write(out + '\n');
   process.exit(0);

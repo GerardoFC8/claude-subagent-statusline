@@ -403,3 +403,102 @@ test('statusline: output includes failed segment always (even when 0)', () => {
     cleanupTmpHome(home);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Cost suffix tests — cost.total_cost_usd appended inside model bracket
+// (main + sub-agents combined, computed client-side by Claude Code)
+// ---------------------------------------------------------------------------
+test('statusline: cost present → renders [model · $X.XX] with 2 decimals', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'COST1',
+      model: { display_name: 'Sonnet' },
+      context_window: { used_percentage: 20 },
+      cost: { total_cost_usd: 0.42345 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Sonnet · $0.42]'), 'must render cost inside model bracket as · $0.42');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: cost = 0 → renders [model · $0.00]', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'COST_ZERO',
+      model: { display_name: 'Sonnet' },
+      context_window: { used_percentage: 20 },
+      cost: { total_cost_usd: 0 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Sonnet · $0.00]'), 'must render zero cost as · $0.00 inside bracket');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: cost field absent → bracket stays [model] with no suffix', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'NO_COST',
+      model: { display_name: 'Sonnet' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Sonnet]'), 'bracket must be plain when cost is absent');
+    assert.ok(!result.stdout.includes('·'), 'must omit · separator when cost is absent');
+    assert.ok(!result.stdout.includes('$'), 'must omit $ when cost is absent');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: cost is not a number → bracket stays [model] with no suffix', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'BAD_COST',
+      model: { display_name: 'Sonnet' },
+      context_window: { used_percentage: 20 },
+      cost: { total_cost_usd: 'free' },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Sonnet]'), 'bracket must be plain when cost is non-numeric');
+    assert.ok(!result.stdout.includes('$'), 'must omit $ when cost is non-numeric');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: cost suffix appears BEFORE the bar (inside opening bracket)', () => {
+  const home = mkTmpHome();
+  try {
+    const sid = 'COST_ORDER_' + Date.now();
+    const startFile = sessionStartFile(home, sid);
+    fs.mkdirSync(path.dirname(startFile), { recursive: true });
+    fs.writeFileSync(startFile, String(Math.floor(Date.now() / 1000) - 30));
+
+    const payload = JSON.stringify({
+      session_id: sid,
+      model: { display_name: 'Sonnet' },
+      context_window: { used_percentage: 20 },
+      cost: { total_cost_usd: 1.23 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    const idxCost = result.stdout.indexOf('$1.23');
+    const idxBar = result.stdout.search(/[█░]/);
+    assert.ok(idxCost > 0 && idxBar > 0, 'both cost and bar must be present');
+    assert.ok(idxCost < idxBar, 'cost must appear before the progress bar');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
