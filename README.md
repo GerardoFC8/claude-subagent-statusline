@@ -2,17 +2,21 @@
 
 # claude-subagent-statusline
 
-Plugin para Claude Code que monitoriza las delegaciones a sub-agentes (Task) en tiempo real y muestra una statusline en vivo con el uso de la ventana de contexto, el costo estimado de la sesión, el conteo de delegaciones y el tiempo transcurrido. Mantiene un historial persistente y consultable de cada delegación entre sesiones. Node.js puro (18 o superior) — funciona en Windows, macOS y Linux.
+Plugin para Claude Code que monitoriza las delegaciones a sub-agentes (Task) en tiempo real y muestra una statusline en vivo con el uso de la ventana de contexto, el costo estimado de la sesión, los rate limits (5h y 7d), el conteo de delegaciones y el tiempo transcurrido. Mantiene un historial persistente y consultable de cada delegación entre sesiones. Node.js puro (18 o superior) — funciona en Windows, macOS y Linux.
 
 ## Vista previa
 
 ```
-[Opus 4.7 · $1.42] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed │ ⏱ 14m 32s
+[Opus 4.7 · $1.42] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed │ ⏱ 14m 32s │ 🪟 Ventana 5h: 13% (reset en 1h 8m) · Semana: 4% (reset en 5d 15h)
 ```
 
 La barra tiene 10 celdas y cambia de color según el porcentaje: verde por debajo del 50%, amarillo entre 50% y 79%, rojo a partir del 80%. Los segmentos `✗ failed` y `⏱` se muestran siempre — desde la primera invocación se ven `✗ 0 failed` y `⏱ 0s`.
 
 El sufijo `· $X.XX` dentro del bracket del modelo muestra el costo estimado total de la sesión en USD, calculado del lado del cliente por Claude Code. Acumula el costo de todas las llamadas al API durante la sesión — tanto del agente principal como de cada sub-agente lanzado con la tool Task. Si tu versión de Claude Code no expone el campo `cost`, el sufijo se omite y el bracket queda como `[Modelo]`.
+
+El segmento `🪟 Ventana 5h: X% (reset en …) · Semana: X% (reset en …)` muestra el uso actual de los rate limits de 5 horas y 7 días reportados por Claude Code, junto con el tiempo restante hasta el próximo reset. El porcentaje se colorea con la misma escala que la barra (verde / amarillo / rojo) para que detectes a simple vista cuándo te estás acercando al límite. El delta de reset se formatea como `Xm` por debajo de una hora, `Xh Ym` por debajo de un día, o `Xd Yh` para ventanas más largas. Si tu cuenta no expone rate limits, el segmento se omite entero.
+
+El nombre del modelo se normaliza eliminando anotaciones tipo `(1M context)` o `(200K context)` para mantener el bracket compacto. Si Claude Code reporta `Opus 4.7 (1M context)`, en el statusline verás `[Opus 4.7]`.
 
 ## Instalación
 
@@ -103,7 +107,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (108 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (117 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 

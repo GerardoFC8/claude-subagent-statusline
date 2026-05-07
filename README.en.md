@@ -2,17 +2,21 @@
 
 # claude-subagent-statusline
 
-A Claude Code plugin that tracks Task (sub-agent) delegations in real time and renders a live statusline showing your context window usage, estimated session cost, delegation counts, and session elapsed time. Persists a searchable history of every delegation across sessions. Pure Node.js (18+) — runs on Windows, macOS, and Linux.
+A Claude Code plugin that tracks Task (sub-agent) delegations in real time and renders a live statusline showing your context window usage, estimated session cost, rate-limit windows (5h and 7d), delegation counts, and session elapsed time. Persists a searchable history of every delegation across sessions. Pure Node.js (18+) — runs on Windows, macOS, and Linux.
 
 ## Preview
 
 ```
-[Opus 4.7 · $1.42] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed │ ⏱ 14m 32s
+[Opus 4.7 · $1.42] ████░░░░░░ 42% │ ⚡ 2 running | ✓ 7 done │ ✗ 0 failed │ ⏱ 14m 32s │ 🪟 Ventana 5h: 13% (reset en 1h 8m) · Semana: 4% (reset en 5d 15h)
 ```
 
 The bar is 10 cells wide and color-coded: green below 50%, yellow 50–79%, red 80%+. Both `✗ failed` and `⏱` segments render unconditionally — you get `✗ 0 failed` and `⏱ 0s` from the very first statusline call.
 
 The `· $X.XX` suffix inside the model bracket shows the estimated total session cost in USD, computed client-side by Claude Code. It accumulates the cost of every API call during the session — including the main agent AND every sub-agent launched with the Task tool. If your Claude Code version does not expose the `cost` field, the suffix is omitted and the bracket stays as `[Model]`.
+
+The `🪟 Ventana 5h: X% (reset en …) · Semana: X% (reset en …)` segment shows the live usage of the 5-hour and 7-day rate-limit windows reported by Claude Code, alongside the time remaining until each window resets. The percentage uses the same color scale as the bar (green / yellow / red) so you can spot rate-limit pressure at a glance. The reset delta is formatted as `Xm` below one hour, `Xh Ym` below one day, or `Xd Yh` for longer windows. The labels are intentionally Spanish ("Ventana" = window, "Semana" = week) — if your account does not expose rate limits, the whole segment is omitted.
+
+The model name is normalized by stripping trailing `(... context)` annotations to keep the bracket compact. When Claude Code reports `Opus 4.7 (1M context)`, the statusline shows `[Opus 4.7]`. Plain names without that annotation are preserved unchanged.
 
 ## Install
 
@@ -103,7 +107,7 @@ node --version   # must be >= 18
 npm test
 ```
 
-All changes must pass `npm test` (108 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
+All changes must pass `npm test` (117 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
 
 ## License
 

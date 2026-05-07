@@ -502,3 +502,191 @@ test('statusline: cost suffix appears BEFORE the bar (inside opening bracket)', 
     cleanupTmpHome(home);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Model name normalization — strip trailing "(...context...)" annotation
+// ---------------------------------------------------------------------------
+test('statusline: model name "(1M context)" suffix is stripped', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'M1',
+      model: { display_name: 'Opus 4.7 (1M context)' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Opus 4.7]'), 'must strip "(1M context)" annotation');
+    assert.ok(!result.stdout.includes('context'), 'must not leave "context" word in output');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: model name "(200K context)" suffix is stripped', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'M2',
+      model: { display_name: 'Sonnet 4.6 (200K context)' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Sonnet 4.6]'), 'must strip any "(... context)" annotation');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: model name without context suffix is preserved unchanged', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'M3',
+      model: { display_name: 'Opus 4.7' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[Opus 4.7]'), 'plain model name must be preserved');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Rate limit segments — five_hour ("Ventana 5h") and seven_day ("Semana")
+// ---------------------------------------------------------------------------
+test('statusline: both rate limits present → joined "Ventana 5h ... · Semana ..."', () => {
+  const home = mkTmpHome();
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = JSON.stringify({
+      session_id: 'RL1',
+      model: { display_name: 'M' },
+      context_window: { used_percentage: 20 },
+      rate_limits: {
+        five_hour: { used_percentage: 13, resets_at: now + 4080 },        // 1h 8m
+        seven_day: { used_percentage: 4, resets_at: now + 488400 },       // 5d 15h
+      },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('🪟'), 'must include rate-limit window emoji');
+    assert.ok(result.stdout.includes('Ventana 5h:'), 'must label five-hour window');
+    assert.ok(result.stdout.includes('13%'), 'must show 5h percentage');
+    assert.ok(result.stdout.match(/reset en 1h \d+m/), 'must format 5h reset as "Xh Ym"');
+    assert.ok(result.stdout.includes('Semana:'), 'must label seven-day window');
+    assert.ok(result.stdout.includes('4%'), 'must show 7d percentage');
+    assert.ok(result.stdout.match(/reset en 5d \d+h/), 'must format 7d reset as "Xd Yh"');
+    const idx5h = result.stdout.indexOf('Ventana 5h');
+    const idx7d = result.stdout.indexOf('Semana');
+    assert.ok(idx5h > 0 && idx7d > idx5h, 'Ventana 5h must come before Semana');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: only five_hour present → renders only that window', () => {
+  const home = mkTmpHome();
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = JSON.stringify({
+      session_id: 'RL2',
+      model: { display_name: 'M' },
+      context_window: { used_percentage: 20 },
+      rate_limits: { five_hour: { used_percentage: 50, resets_at: now + 1800 } }, // 30m
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('Ventana 5h:'), 'must render five_hour');
+    assert.ok(!result.stdout.includes('Semana:'), 'must NOT render seven_day when absent');
+    assert.ok(result.stdout.includes('reset en 30m'), 'sub-hour delta must format as "Xm"');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: rate_limits absent entirely → no rate-limit segment', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'RL3',
+      model: { display_name: 'M' },
+      context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(!result.stdout.includes('🪟'), 'must omit window emoji when rate_limits absent');
+    assert.ok(!result.stdout.includes('Ventana'), 'must omit Ventana label');
+    assert.ok(!result.stdout.includes('Semana'), 'must omit Semana label');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: resets_at in the past → percentage shown but reset suffix omitted', () => {
+  const home = mkTmpHome();
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = JSON.stringify({
+      session_id: 'RL4',
+      model: { display_name: 'M' },
+      context_window: { used_percentage: 20 },
+      rate_limits: { five_hour: { used_percentage: 25, resets_at: now - 60 } },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('Ventana 5h:'), 'must still render the percentage');
+    assert.ok(result.stdout.includes('25%'), 'must show percentage');
+    assert.ok(!result.stdout.includes('(reset en'), 'must omit "reset en" when delta <= 0');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: used_percentage non-numeric → that window omitted', () => {
+  const home = mkTmpHome();
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = JSON.stringify({
+      session_id: 'RL5',
+      model: { display_name: 'M' },
+      context_window: { used_percentage: 20 },
+      rate_limits: {
+        five_hour: { used_percentage: 'oops', resets_at: now + 600 },
+        seven_day: { used_percentage: 4, resets_at: now + 488400 },
+      },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(!result.stdout.includes('Ventana 5h:'), 'must omit five_hour when percentage is non-numeric');
+    assert.ok(result.stdout.includes('Semana:'), 'must still render valid seven_day');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: rate-limit percentage colored by threshold (green/yellow/red)', () => {
+  const home = mkTmpHome();
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = JSON.stringify({
+      session_id: 'RL6',
+      model: { display_name: 'M' },
+      context_window: { used_percentage: 20 },
+      rate_limits: {
+        five_hour: { used_percentage: 30, resets_at: now + 600 },   // green
+        seven_day: { used_percentage: 90, resets_at: now + 600 },   // red
+      },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    // Must contain both green and red ANSI codes wrapping the rate-limit percentages.
+    assert.ok(result.stdout.includes('\x1b[32m30%'), 'five_hour at 30% must be green');
+    assert.ok(result.stdout.includes('\x1b[31m90%'), 'seven_day at 90% must be red');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
