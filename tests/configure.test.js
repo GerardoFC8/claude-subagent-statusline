@@ -264,11 +264,16 @@ test('auto-configure: noop when already correct', (t) => {
   const home = mkTmpHome();
   t.after(() => cleanupTmpHome(home));
 
-  // The script resolves pluginRoot from __dirname, so the desired command for
+  // The script resolves pluginRoot from __dirname, so the desired commands for
   // the noop fixture must match what the script will compute against REPO_ROOT.
+  // Both the statusLine AND the additive subagentStatusLine must already be
+  // correct for this to be a true noop (no write, no backup).
   const desired = lib.desiredCommand(REPO_ROOT);
+  const desiredSubagent = lib.desiredSubagentCommand(REPO_ROOT);
   writeSettings(home, {
     statusLine: { type: 'command', command: desired, refreshInterval: 30 },
+    // Proven subagentStatusLine shape: {type, command}, no refreshInterval.
+    subagentStatusLine: { type: 'command', command: desiredSubagent },
   });
 
   const before = fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf-8');
@@ -384,4 +389,184 @@ test('auto-configure: does NOT touch wrapper-style command if wrapper does not r
 
   const settings = readSettings(home);
   assert.equal(settings.statusLine.command, `bash ${wrapperPath}`, 'unrelated wrapper preserved');
+});
+
+// ---------- subagentStatusLine (additive) unit tests ----------
+
+test('desiredSubagentCommand: produces absolute-path command to subagent-statusline.js', () => {
+  const cmd = lib.desiredSubagentCommand('/some/abs/path');
+  assert.equal(cmd, 'node "/some/abs/path/scripts/subagent-statusline.js"');
+  assert.ok(!cmd.includes('${CLAUDE_PLUGIN_ROOT}'));
+});
+
+test('desiredSubagentCommand: throws when pluginRoot is missing or empty', () => {
+  assert.throws(() => lib.desiredSubagentCommand(), /pluginRoot/);
+  assert.throws(() => lib.desiredSubagentCommand(''), /pluginRoot/);
+  assert.throws(() => lib.desiredSubagentCommand('   '), /pluginRoot/);
+});
+
+test('classifySubagent: missing command returns "missing"', () => {
+  assert.equal(lib.classifySubagent(undefined), 'missing');
+  assert.equal(lib.classifySubagent(''), 'missing');
+  assert.equal(lib.classifySubagent('   '), 'missing');
+});
+
+test('classifySubagent: command referencing our plugin returns "ours"', () => {
+  assert.equal(lib.classifySubagent(lib.desiredSubagentCommand(PLUGIN_ROOT)), 'ours');
+  assert.equal(
+    lib.classifySubagent('node "${CLAUDE_PLUGIN_ROOT}/scripts/subagent-statusline.js"'),
+    'ours',
+  );
+});
+
+test('classifySubagent: arbitrary command returns "custom"', () => {
+  assert.equal(lib.classifySubagent('my-own-subagent-renderer'), 'custom');
+  assert.equal(lib.classifySubagent('node /opt/other/thing.js'), 'custom');
+});
+
+test('planSubagentAction: missing → create, custom → skip, ours+command-match → noop, ours+stale → update', () => {
+  const desired = lib.desiredSubagentCommand(PLUGIN_ROOT);
+  assert.equal(lib.planSubagentAction('missing', undefined, undefined, desired), 'create');
+  assert.equal(lib.planSubagentAction('custom', 'x', 30, desired), 'skip');
+  // The written shape is {type, command} with NO refreshInterval, so a matching
+  // command is a true noop regardless of whether a refreshInterval is present.
+  assert.equal(lib.planSubagentAction('ours', desired, 30, desired), 'noop');
+  assert.equal(lib.planSubagentAction('ours', desired, undefined, desired), 'noop');
+  assert.equal(lib.planSubagentAction('ours', 'stale', undefined, desired), 'update');
+  assert.equal(lib.planSubagentAction('ours', 'stale', 30, desired), 'update');
+});
+
+test('planAction: reports subagentAction "create" when subagentStatusLine is absent', () => {
+  const plan = lib.planAction({}, PLUGIN_OPTS);
+  assert.equal(plan.subagentAction, 'create');
+  assert.ok(plan.desiredSubagent.includes(PLUGIN_ROOT));
+  assert.match(plan.desiredSubagent, /scripts[\\/]subagent-statusline\.js/);
+});
+
+test('planAction: reports subagentAction "skip" for a custom subagentStatusLine', () => {
+  const desired = lib.desiredCommand(PLUGIN_ROOT);
+  const plan = lib.planAction(
+    { statusLine: { command: desired, refreshInterval: 30 }, subagentStatusLine: { command: 'starship-subs' } },
+    PLUGIN_OPTS,
+  );
+  assert.equal(plan.action, 'noop', 'statusLine already correct');
+  assert.equal(plan.subagentAction, 'skip', 'custom subagent renderer must be left intact');
+});
+
+test('planAction: subagent decision does not alter the statusLine action', () => {
+  // statusLine correct+refresh present, subagent missing → statusLine stays "noop".
+  const desired = lib.desiredCommand(PLUGIN_ROOT);
+  const plan = lib.planAction({ statusLine: { command: desired, refreshInterval: 30 } }, PLUGIN_OPTS);
+  assert.equal(plan.action, 'noop');
+  assert.equal(plan.subagentAction, 'create');
+});
+
+test('applyAction: create also registers the subagentStatusLine block as {type, command}', () => {
+  const plan = lib.planAction({}, PLUGIN_OPTS);
+  const next = lib.applyAction(plan, {});
+  assert.equal(next.subagentStatusLine.command, plan.desiredSubagent);
+  assert.equal(next.subagentStatusLine.type, 'command');
+  // Proven contract: subagentStatusLine has NO refreshInterval.
+  assert.ok(
+    !('refreshInterval' in next.subagentStatusLine),
+    'subagentStatusLine must not carry a refreshInterval',
+  );
+});
+
+test('applyAction: registers subagentStatusLine even when statusLine is a noop', () => {
+  const desired = lib.desiredCommand(PLUGIN_ROOT);
+  const original = { statusLine: { type: 'command', command: desired, refreshInterval: 30 } };
+  const plan = lib.planAction(original, PLUGIN_OPTS);
+  assert.equal(plan.action, 'noop');
+  const next = lib.applyAction(plan, original);
+  assert.ok(next, 'must produce a write to add the additive key');
+  assert.equal(next.subagentStatusLine.command, plan.desiredSubagent);
+  // statusLine must be preserved unchanged.
+  assert.equal(next.statusLine.command, desired);
+  assert.equal(next.statusLine.refreshInterval, 30);
+});
+
+test('applyAction: does not overwrite a custom subagentStatusLine', () => {
+  const desired = lib.desiredCommand(PLUGIN_ROOT);
+  const original = {
+    statusLine: { type: 'command', command: desired, refreshInterval: 30 },
+    subagentStatusLine: { type: 'command', command: 'my-custom-subs' },
+  };
+  const plan = lib.planAction(original, PLUGIN_OPTS);
+  const next = lib.applyAction(plan, original);
+  // Both keys already correct/custom → nothing to write.
+  assert.equal(next, null);
+});
+
+test('applyAction: preserves user-set subagent refreshInterval on update', () => {
+  const stale = 'node "${CLAUDE_PLUGIN_ROOT}/scripts/subagent-statusline.js"';
+  const original = {
+    statusLine: { type: 'command', command: 'starship' }, // custom → inform short-circuits
+    subagentStatusLine: { type: 'command', command: stale, refreshInterval: 10 },
+  };
+  // With a custom statusLine, applyAction returns null (we never touch either key).
+  const plan = lib.planAction(original, PLUGIN_OPTS);
+  assert.equal(plan.action, 'inform');
+  assert.equal(lib.applyAction(plan, original), null);
+});
+
+// ---------- subagentStatusLine auto-configure integration tests ----------
+
+test('auto-configure: registers subagentStatusLine when creating settings.json from scratch', (t) => {
+  const home = mkTmpHome();
+  t.after(() => cleanupTmpHome(home));
+
+  const result = runAutoConfigure(home);
+  assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+
+  const settings = readSettings(home);
+  assert.ok(settings.subagentStatusLine, 'subagentStatusLine block should be created');
+  assert.match(settings.subagentStatusLine.command, /scripts\/subagent-statusline\.js/);
+  assert.equal(settings.subagentStatusLine.type, 'command');
+});
+
+test('auto-configure: adds subagentStatusLine to an existing correct statusLine (subagent-only write)', (t) => {
+  const home = mkTmpHome();
+  t.after(() => cleanupTmpHome(home));
+
+  // statusLine already fully correct; only the additive key is missing.
+  const desired = lib.desiredCommand(REPO_ROOT);
+  writeSettings(home, {
+    theme: 'dark',
+    statusLine: { type: 'command', command: desired, refreshInterval: 30 },
+  });
+
+  const result = runAutoConfigure(home);
+  assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+  assert.match(result.stdout, /subagentStatusLine/i);
+
+  const settings = readSettings(home);
+  assert.match(settings.subagentStatusLine.command, /scripts\/subagent-statusline\.js/);
+  assert.equal(settings.statusLine.command, desired, 'statusLine must be untouched');
+  assert.equal(settings.theme, 'dark', 'unrelated keys preserved');
+  assert.equal(listBackups(home).length, 1, 'a backup must be written before the change');
+});
+
+test('auto-configure: leaves a custom subagentStatusLine intact', (t) => {
+  const home = mkTmpHome();
+  t.after(() => cleanupTmpHome(home));
+
+  const desired = lib.desiredCommand(REPO_ROOT);
+  const desiredSubagent = lib.desiredSubagentCommand(REPO_ROOT);
+  writeSettings(home, {
+    statusLine: { type: 'command', command: desired, refreshInterval: 30 },
+    subagentStatusLine: { type: 'command', command: 'my-own-subagent-line' },
+  });
+
+  const result = runAutoConfigure(home);
+  assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+
+  const settings = readSettings(home);
+  assert.equal(
+    settings.subagentStatusLine.command,
+    'my-own-subagent-line',
+    'custom subagent renderer must be preserved',
+  );
+  assert.notEqual(settings.subagentStatusLine.command, desiredSubagent);
+  assert.equal(listBackups(home).length, 0, 'nothing to write → no backup');
 });

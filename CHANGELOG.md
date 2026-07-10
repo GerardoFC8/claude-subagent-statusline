@@ -7,6 +7,30 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.11.0] — 2026-07-09
+
+### Added
+
+- **Per-subagent statusline rows (`subagentStatusLine`)** — new renderer `scripts/subagent-statusline.js` implements Claude Code's second statusline contract: it reads a single JSON object on stdin (`{ ...baseFields, columns, tasks[] }`) and writes one `{"id","content"}` line per row, rendering **one row per running sub-agent**. Each row leads with the **resolved model** the sub-agent runs on (`claude-opus-4-8[1m]` → `Opus 4.8`, `claude-haiku-4-5-20251001` → `Haiku 4.5`, `claude-sonnet-5` → `Sonnet 5`, `claude-fable-5` → `Fable 5`), followed by the sub-agent type/name, a `columns`-budgeted description (truncated with `…`), and the sub-agent's context-window percentage when the payload provides `tokenCount`/`contextWindowSize`. Unresolved models fall back to a dim `⋯`. Like every script in this plugin it is pure Node (no dependencies), cross-platform, and exits `0` on all paths — malformed or empty stdin produces no output and leaves Claude Code's default rendering in place. **Requires Claude Code v2.1.205+** for the per-task `model` field; older versions simply ignore the setting.
+- **Additive `subagentStatusLine` auto-registration** — `scripts/lib/configure.js` now plans and writes the `subagentStatusLine` key alongside `statusLine`, using the same absolute-path (`node "<root>/scripts/subagent-statusline.js"`), backup-before-write, and user-value-preserving strategy. It is strictly additive: the existing `statusLine` decision is unchanged, a user's custom `subagentStatusLine` is never overwritten, and installs whose `statusLine` is already correct get the new key registered on the next `SessionStart` (a subagent-only write).
+
+### Changed
+
+- **`scripts/lib/configure.js`** exports `desiredSubagentCommand`, `classifySubagent`, and `planSubagentAction`, plus a `SUBAGENT_STATUSLINE_REL_PATH` constant. `planAction` now returns subagent-planning fields (`desiredSubagent`, `subagentClassification`, `subagentAction`) and `applyAction` writes both keys independently.
+- **`scripts/auto-configure.js`** — the write path now triggers when *either* `statusLine` or the additive `subagentStatusLine` needs it; a subagent-only write emits a `Registered subagentStatusLine` notice.
+- **`README.md` / `README.en.md`** — new "Per-subagent rows" section, a manual-configuration snippet for `subagentStatusLine`, and the test count bumped to 180.
+- **Version** bumped to `0.11.0` (minor: additive feature) across `plugin.json`, `package.json`, and `marketplace.json` (the marketplace entry was stale at `0.5.0`).
+
+### Updating
+
+```
+claude plugin update claude-subagent-statusline@claude-subagent-statusline
+```
+
+Restart Claude Code to apply. On the next `SessionStart` the plugin registers `subagentStatusLine` in your `settings.json` (a one-time `settings.json.<timestamp>.bak` is written for safety). The per-subagent rows only render on Claude Code v2.1.205+; on older versions the setting is ignored and the aggregate statusline is unaffected.
+
+---
+
 ## [0.10.2] — 2026-05-07
 
 ### Added
