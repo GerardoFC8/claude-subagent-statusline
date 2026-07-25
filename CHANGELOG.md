@@ -7,6 +7,33 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.11.0] — 2026-07-09
+
+### Added
+
+- **Per-subagent statusline rows (`subagentStatusLine`)** — new renderer `scripts/subagent-statusline.js` implements Claude Code's second statusline contract: it reads a single JSON object on stdin (`{ ...baseFields, columns, tasks[] }`) and writes one `{"id","content"}` line per row, rendering **one row per running sub-agent**. Each row leads with the **resolved model** the sub-agent runs on (`claude-opus-4-8[1m]` → `Opus 4.8`, `claude-haiku-4-5-20251001` → `Haiku 4.5`, `claude-sonnet-5` → `Sonnet 5`, `claude-fable-5` → `Fable 5`), followed by the sub-agent type/name, a `columns`-budgeted description (truncated with `…`), and the sub-agent's context-window percentage when the payload provides `tokenCount`/`contextWindowSize`. Unresolved models fall back to a dim `⋯`. Like every script in this plugin it is pure Node (no dependencies), cross-platform, and exits `0` on all paths — malformed or empty stdin produces no output and leaves Claude Code's default rendering in place. **Requires Claude Code v2.1.205+** for the per-task `model` field; older versions simply ignore the setting.
+- **Effort level on per-subagent rows** — each row now renders that sub-agent's effort in parentheses after the model (`Opus 4.8 (xhigh)`), matching the main statusline bracket, which has shown the active effort since `0.9.0`. The suffix counts against the `columns` budget so rows still never overflow, accepts both the bare-string and `{ level }` payload shapes, and is omitted when the payload does not carry it.
+- **Shared model-id parser (`scripts/lib/model.js`)** — a single `parseModelFromId` now backs both renderers, replacing the two divergent implementations. It resolves the id shapes Claude Code emits (`claude-opus-4-8[1m]`, `claude-haiku-4-5-20251001`, `claude-opus-4-1@20250805`) plus cloud-provider ids, including Bedrock revision suffixes (`us.anthropic.claude-sonnet-5-v1:0` → `Sonnet 5`) and legacy Bedrock ids where the family follows the version (`us.anthropic.claude-3-5-sonnet-20240620-v1:0` → `Sonnet 3.5`). It returns `null` — never a guess — for ids that are not recognisably Claude models, so each caller keeps control of its own fallback.
+- **Additive `subagentStatusLine` auto-registration** — `scripts/lib/configure.js` now plans and writes the `subagentStatusLine` key alongside `statusLine`, using the same absolute-path (`node "<root>/scripts/subagent-statusline.js"`), backup-before-write, and user-value-preserving strategy. It is strictly additive: the existing `statusLine` decision is unchanged, a user's custom `subagentStatusLine` is never overwritten, and installs whose `statusLine` is already correct get the new key registered on the next `SessionStart` (a subagent-only write).
+
+### Changed
+
+- **`scripts/lib/configure.js`** exports `desiredSubagentCommand`, `classifySubagent`, and `planSubagentAction`, plus a `SUBAGENT_STATUSLINE_REL_PATH` constant. `planAction` now returns subagent-planning fields (`desiredSubagent`, `subagentClassification`, `subagentAction`) and `applyAction` writes both keys independently.
+- **`scripts/auto-configure.js`** — the write path now triggers when *either* `statusLine` or the additive `subagentStatusLine` needs it; a subagent-only write emits a `Registered subagentStatusLine` notice.
+- **`scripts/statusline.js`** — main-model resolution now uses the shared parser instead of a strict `^claude-(opus|sonnet|haiku)-(\d+)-(\d+)$` regex, so ids carrying a `[1m]` bracket, a date snapshot, or a provider prefix resolve from the id itself rather than falling through to `display_name`. The `display_name` fallback is unchanged and still handles every id the parser declines.
+- **`README.md` / `README.en.md`** — new "Per-subagent rows" section, a manual-configuration snippet for `subagentStatusLine`, and the test count bumped to 197.
+- **Version** bumped to `0.11.0` (minor: additive feature) across `plugin.json`, `package.json`, and `marketplace.json` (the marketplace entry was stale at `0.5.0`).
+
+### Updating
+
+```
+claude plugin update claude-subagent-statusline@claude-subagent-statusline
+```
+
+Restart Claude Code to apply. On the next `SessionStart` the plugin registers `subagentStatusLine` in your `settings.json` (a one-time `settings.json.<timestamp>.bak` is written for safety). The per-subagent rows only render on Claude Code v2.1.205+; on older versions the setting is ignored and the aggregate statusline is unaffected.
+
+---
+
 ## [0.10.2] — 2026-05-07
 
 ### Added

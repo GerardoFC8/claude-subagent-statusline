@@ -34,6 +34,21 @@ my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m
 
 **Rate limits** (`5h: X% (reset in …) · Week: X% (reset in …)`) — uso actual de los rate limits de 5 horas y 7 días reportados por Claude Code, junto con el tiempo restante hasta el próximo reset. El porcentaje se colorea con la misma escala que la barra (verde / amarillo / rojo) para que detectes a simple vista cuándo te estás acercando al límite. El delta de reset se formatea como `Xm` por debajo de una hora, `Xh Ym` por debajo de un día, o `Xd Yh` para ventanas más largas. Si tu cuenta no expone rate limits, el segmento se omite entero.
 
+## Filas por sub-agente (modelo por sub-agente)
+
+> Requiere **Claude Code v2.1.205 o superior**. En versiones anteriores el registro se ignora silenciosamente, así que activarlo es siempre seguro.
+
+Además de la statusline agregada, el plugin puede renderizar **una fila por cada sub-agente en ejecución**, cada una encabezada por el **modelo resuelto** en el que corre ese sub-agente (`Opus 4.8`, `Haiku 4.5`, `Sonnet 5`, `Fable 5`…). Usa el segundo contrato de statusline de Claude Code, `subagentStatusLine`: Claude Code envía un único objeto JSON por stdin (`{ ...campos, columns, tasks[] }`) y el plugin imprime una línea `{"id","content"}` por fila.
+
+```
+Opus 4.8 (xhigh) · explore · map the auth module 24%
+Haiku 4.5 · writer · draft the changelog entry
+```
+
+Cada fila combina: el **modelo** (en negrita y cian; si Claude Code no expone el modelo del task, cae al placeholder `⋯`), el **effort** de ese sub-agente entre paréntesis (misma escala que el bracket principal: `low`, `medium`, `high`, `xhigh`, `max`; se omite si el payload no lo trae), el **tipo/nombre** del sub-agente (atenuado), la **descripción** (truncada con `…` para que la fila se mantenga dentro del ancho `columns` de la terminal cuando hay espacio) y, si el payload lo trae, el **porcentaje de contexto** del sub-agente (`tokenCount / contextWindowSize`).
+
+El renderizador vive en `scripts/subagent-statusline.js` y se registra automáticamente bajo la clave `subagentStatusLine` de `~/.claude/settings.json`, de forma aditiva: **no toca ni modifica tu `statusLine` existente**. Si ya tenés un `subagentStatusLine` propio, el plugin lo respeta y no lo sobrescribe.
+
 ## Instalación
 
 ```
@@ -89,6 +104,15 @@ Si prefieres configurarlo a mano, añade esto a `~/.claude/settings.json` reempl
 > **Importante**: usa la ruta absoluta. La variable `${CLAUDE_PLUGIN_ROOT}` solo se expande dentro del `hooks.json` del plugin — Claude Code no la sustituye en `statusLine.command` del `settings.json` del usuario. Por eso la autoconfiguración escribe la ruta absoluta y la actualiza en cada upgrade del plugin.
 
 > **`refreshInterval`** indica cada cuántos segundos Claude Code vuelve a ejecutar el comando aunque no haya mensajes nuevos. Mantiene vivo el contador de la ventana de 5h y el reloj de tiempo transcurrido cuando estás idle. La autoconfiguración usa `30` por defecto; si ya tenés tu propio valor el plugin lo respeta.
+
+Para las [filas por sub-agente](#filas-por-sub-agente-modelo-por-sub-agente) (Claude Code v2.1.205+), añadí además la clave `subagentStatusLine` apuntando al segundo script:
+
+```json
+"subagentStatusLine": {
+  "type": "command",
+  "command": "node \"<RUTA>/scripts/subagent-statusline.js\""
+}
+```
 
 ## Coexistencia con otro statusLine
 
@@ -148,7 +172,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (148 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (197 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 

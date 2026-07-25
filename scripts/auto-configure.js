@@ -50,8 +50,6 @@ function main() {
   const pluginRoot = path.resolve(__dirname, '..');
   const plan = planAction(settings, { wrapperPath, wrapperRefersToOurs, pluginRoot });
 
-  if (plan.action === 'noop') return 0;
-
   if (plan.action === 'inform') {
     const escaped = plan.desired.replace(/"/g, '\\"');
     process.stdout.write(
@@ -63,8 +61,11 @@ function main() {
     return 0;
   }
 
-  // 'create' or 'update'
+  // 'create', 'update', or a statusLine 'noop' that still needs the additive
+  // subagentStatusLine registration. applyAction returns null when there is
+  // genuinely nothing to write (both keys already correct).
   const next = applyAction(plan, settings);
+  if (next === null) return 0;
   const dir = path.dirname(settingsPath);
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -96,11 +97,17 @@ function main() {
     process.stdout.write(
       `[claude-subagent-statusline] Auto-configured statusLine in ${settingsPath}.\n`,
     );
-  } else {
+  } else if (plan.action === 'update') {
     process.stdout.write(
       `[claude-subagent-statusline] Updated statusLine in ${settingsPath}.\n` +
         `  Previous: ${plan.currentCommand}\n` +
         `  Now:      ${plan.desired}\n`,
+    );
+  } else {
+    // statusLine was already correct; the write registered/updated the additive
+    // subagentStatusLine (per-subagent model rows) only.
+    process.stdout.write(
+      `[claude-subagent-statusline] Registered subagentStatusLine in ${settingsPath}.\n`,
     );
   }
   return 0;
