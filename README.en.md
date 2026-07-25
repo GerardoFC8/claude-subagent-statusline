@@ -41,11 +41,20 @@ my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m
 On top of the aggregate statusline, the plugin can render **one row per running sub-agent**, each leading with the **resolved model** that sub-agent runs on (`Opus 4.8`, `Haiku 4.5`, `Sonnet 5`, `Fable 5`…). It uses Claude Code's second statusline contract, `subagentStatusLine`: Claude Code pipes a single JSON object on stdin (`{ ...baseFields, columns, tasks[] }`) and the plugin writes one `{"id","content"}` line per row.
 
 ```
-Opus 4.8 (xhigh) · explore · map the auth module 24%
-Haiku 4.5 · writer · draft the changelog entry
+Opus 4.8 · Implement the checkout slice ▁▂▄▅█ 24k/200k · 45s
+Sonnet 5 · Audit the changelog entries ▁▃▅▇█ 91k/200k · 2m 10s
+Haiku 4.5 · Map the auth module ▁▁▁▁▁ 8k/200k · 8m 24s
 ```
 
-Each row combines: the **model** (bold cyan; falls back to the `⋯` placeholder when Claude Code does not expose the task's model), that sub-agent's **effort** in parentheses (same scale as the main bracket: `low`, `medium`, `high`, `xhigh`, `max`; omitted when the payload does not carry it), the sub-agent **type/name** (dimmed), the **description** (truncated with `…` so the row stays within the terminal's `columns` width when there's room), and — when the payload provides it — the sub-agent's **context percentage** (`tokenCount / contextWindowSize`).
+Each row combines: the **model** (bold cyan; falls back to the `⋯` placeholder when Claude Code does not expose the task's model), that sub-agent's **effort** in parentheses (same scale as the main bracket; omitted when the payload does not carry it), the sub-agent **type** when it carries information, the **description** (truncated with `…` so the row stays within the terminal's `columns` width), and a tail of live metrics: the **consumption trend**, the **context used against the window**, and the **elapsed time**.
+
+**Consumption trend** (`▁▂▄▅█`) — a sparkline over the last 8 `tokenSamples` entries, normalised against their own min and max. A rising line is a sub-agent doing work; a flat line is one that stopped consuming tokens. Paired with the elapsed time, this is how you spot a stalled agent at a glance: in the example above, the third row has been running for 8 minutes and its consumption has not moved. Omitted when the payload carries fewer than two samples.
+
+**Context used** (`24k/200k`) — tokens consumed against that sub-agent's window size, as absolute values rather than a percentage, so you can see the headroom without doing the arithmetic. Counts below 1000 render exactly.
+
+**Elapsed** (`8m 24s`) — measured from the task's `startTime`, formatted exactly like the `⏱` clock on the main statusline.
+
+> The sub-agent **type** rarely shows up: Claude Code sends `local_agent` for every foreground sub-agent, an internal value identical across all rows, so the plugin suppresses it rather than spending width on noise. The agent type you requested when delegating (`Explore`, `general-purpose`, …) is not carried in the payload at all.
 
 The renderer lives at `scripts/subagent-statusline.js` and is registered automatically under the `subagentStatusLine` key of `~/.claude/settings.json`, additively: it **never touches or changes your existing `statusLine`**. If you already have your own `subagentStatusLine`, the plugin leaves it intact and does not overwrite it.
 
@@ -172,7 +181,7 @@ node --version   # must be >= 18
 npm test
 ```
 
-All changes must pass `npm test` (197 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
+All changes must pass `npm test` (216 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
 
 ## License
 

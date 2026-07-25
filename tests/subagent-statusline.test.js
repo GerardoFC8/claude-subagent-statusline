@@ -100,6 +100,100 @@ test('subagent-statusline: non-Claude model ids fall back to ⋯ instead of a gu
 });
 
 // ---------------------------------------------------------------------------
+// internal task types / elapsed
+// ---------------------------------------------------------------------------
+
+test('subagent-statusline: suppresses the internal local_agent task type', () => {
+  // Claude Code sends `type: "local_agent"` for every foreground sub-agent, so
+  // rendering it costs width and tells the user nothing. Verified against a real
+  // captured payload: the requested agent type is not exposed in any field.
+  const payload = {
+    columns: 200,
+    tasks: [{ id: 'a', model: 'claude-haiku-4-5', type: 'local_agent', description: 'count files' }],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  const visible = plain(rows(r.stdout)[0].content);
+  assert.ok(!visible.includes('local_agent'), `internal type leaked: ${visible}`);
+  assert.strictEqual(visible, 'Haiku 4.5 · count files');
+});
+
+test('subagent-statusline: keeps a task type that is not an internal placeholder', () => {
+  const payload = {
+    columns: 200,
+    tasks: [{ id: 'a', model: 'claude-haiku-4-5', type: 'Explore', description: 'count files' }],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  assert.strictEqual(plain(rows(r.stdout)[0].content), 'Haiku 4.5 · Explore · count files');
+});
+
+test('subagent-statusline: renders elapsed time from startTime', () => {
+  // Offset chosen so a second of drift between building the payload and running
+  // the script cannot change the rendered label.
+  const payload = {
+    columns: 200,
+    tasks: [{ id: 'a', model: 'claude-haiku-4-5', description: 'work', startTime: Date.now() - 7325000 }],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  assert.strictEqual(plain(rows(r.stdout)[0].content), 'Haiku 4.5 · work · 2h 2m');
+});
+
+test('subagent-statusline: renders elapsed alongside the context usage', () => {
+  const payload = {
+    columns: 200,
+    tasks: [
+      {
+        id: 'a',
+        model: 'claude-haiku-4-5',
+        description: 'work',
+        startTime: Date.now() - 7325000,
+        tokenCount: 50000,
+        contextWindowSize: 200000,
+      },
+    ],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  assert.strictEqual(plain(rows(r.stdout)[0].content), 'Haiku 4.5 · work 50k/200k · 2h 2m');
+});
+
+test('subagent-statusline: omits elapsed when startTime is missing or unusable', () => {
+  const payload = {
+    columns: 200,
+    tasks: [
+      { id: 'a', model: 'claude-haiku-4-5', description: 'work' },
+      { id: 'b', model: 'claude-haiku-4-5', description: 'work', startTime: 'yesterday' },
+      { id: 'c', model: 'claude-haiku-4-5', description: 'work', startTime: null },
+    ],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  const out = rows(r.stdout);
+  assert.strictEqual(out.length, 3);
+  for (const row of out) {
+    assert.strictEqual(plain(row.content), 'Haiku 4.5 · work');
+  }
+});
+
+test('subagent-statusline: elapsed counts against the description budget', () => {
+  const columns = 60;
+  const payload = {
+    columns,
+    tasks: [
+      {
+        id: 'a',
+        model: 'claude-opus-4-8',
+        description: 'z'.repeat(300),
+        startTime: Date.now() - 7325000,
+        tokenCount: 50000,
+        contextWindowSize: 200000,
+      },
+    ],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  const visible = plain(rows(r.stdout)[0].content);
+  assert.ok(visible.includes('2h 2m'), visible);
+  assert.ok(visible.length <= columns, `row of ${visible.length} exceeds columns=${columns}: ${visible}`);
+});
+
+// ---------------------------------------------------------------------------
 // effort level (parity with the main statusline, which has shown it since v0.9.0)
 // ---------------------------------------------------------------------------
 
@@ -275,7 +369,7 @@ test('subagent-statusline: description is dropped entirely when the budget is ti
 // context-window percentage
 // ---------------------------------------------------------------------------
 
-test('subagent-statusline: appends context percentage when token counts are present', () => {
+test('subagent-statusline: appends context usage as used/window, not a percentage', () => {
   const payload = {
     columns: 120,
     tasks: [
@@ -284,10 +378,28 @@ test('subagent-statusline: appends context percentage when token counts are pres
   };
   const r = runScript(SCRIPT, JSON.stringify(payload));
   const visible = plain(rows(r.stdout)[0].content);
-  assert.ok(visible.includes('25%'), `expected 25% context, got: ${visible}`);
+  assert.strictEqual(visible, 'Opus 4.8 50k/200k');
+  assert.ok(!/\d%/.test(visible), `percentage must be gone: ${visible}`);
 });
 
-test('subagent-statusline: no percentage when contextWindowSize is zero or missing', () => {
+test('subagent-statusline: abbreviates thousands and keeps small counts exact', () => {
+  const payload = {
+    columns: 120,
+    tasks: [
+      { id: 'a', model: 'claude-opus-4-8', tokenCount: 842, contextWindowSize: 200000 },
+      { id: 'b', model: 'claude-opus-4-8', tokenCount: 0, contextWindowSize: 200000 },
+      { id: 'c', model: 'claude-opus-4-8', tokenCount: 12022, contextWindowSize: 200000 },
+      { id: 'd', model: 'claude-opus-4-8', tokenCount: 1000000, contextWindowSize: 1000000 },
+    ],
+  };
+  const out = rows(runScript(SCRIPT, JSON.stringify(payload)).stdout);
+  assert.strictEqual(plain(out[0].content), 'Opus 4.8 842/200k');
+  assert.strictEqual(plain(out[1].content), 'Opus 4.8 0/200k');
+  assert.strictEqual(plain(out[2].content), 'Opus 4.8 12k/200k');
+  assert.strictEqual(plain(out[3].content), 'Opus 4.8 1000k/1000k');
+});
+
+test('subagent-statusline: no context segment when contextWindowSize is zero or missing', () => {
   const payload = {
     columns: 120,
     tasks: [
@@ -297,8 +409,113 @@ test('subagent-statusline: no percentage when contextWindowSize is zero or missi
   };
   const r = runScript(SCRIPT, JSON.stringify(payload));
   for (const row of rows(r.stdout)) {
-    assert.ok(!/\d%/.test(plain(row.content)), `unexpected percentage: ${plain(row.content)}`);
+    assert.strictEqual(plain(row.content), 'Opus 4.8');
   }
+});
+
+// ---------------------------------------------------------------------------
+// tokenSamples sparkline
+// ---------------------------------------------------------------------------
+
+test('subagent-statusline: renders a sparkline from tokenSamples', () => {
+  const payload = {
+    columns: 120,
+    tasks: [
+      {
+        id: 'a',
+        model: 'claude-opus-4-8',
+        tokenCount: 12022,
+        contextWindowSize: 200000,
+        tokenSamples: [0, 12012, 12022],
+      },
+    ],
+  };
+  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
+  assert.ok(/[▁▂▃▄▅▆▇█]{3}/.test(visible), `expected a 3-cell sparkline, got: ${visible}`);
+  assert.ok(visible.endsWith('12k/200k'), visible);
+});
+
+test('subagent-statusline: a flat sample series renders a flat sparkline', () => {
+  // This is the stall signal: a sub-agent that stopped consuming tokens shows a
+  // level line instead of a rising one.
+  const payload = {
+    columns: 120,
+    tasks: [
+      { id: 'a', model: 'claude-opus-4-8', tokenCount: 900, contextWindowSize: 200000, tokenSamples: [900, 900, 900, 900] },
+    ],
+  };
+  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
+  assert.ok(visible.includes('▁▁▁▁'), `expected a flat sparkline, got: ${visible}`);
+});
+
+test('subagent-statusline: a rising series ends higher than it starts', () => {
+  const payload = {
+    columns: 120,
+    tasks: [
+      { id: 'a', model: 'claude-opus-4-8', tokenCount: 80, contextWindowSize: 200000, tokenSamples: [0, 40, 80] },
+    ],
+  };
+  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
+  const spark = visible.match(/[▁▂▃▄▅▆▇█]+/)[0];
+  const cells = '▁▂▃▄▅▆▇█';
+  assert.strictEqual(spark.length, 3);
+  assert.ok(
+    cells.indexOf(spark[2]) > cells.indexOf(spark[0]),
+    `expected a rising sparkline, got: ${spark}`,
+  );
+});
+
+test('subagent-statusline: caps the sparkline so an unbounded series cannot grow the row', () => {
+  // tokenSamples accumulates one entry per tick and never shrinks, so the row
+  // would widen forever without a cap.
+  const samples = Array.from({ length: 200 }, (_, i) => i * 100);
+  const payload = {
+    columns: 120,
+    tasks: [
+      { id: 'a', model: 'claude-opus-4-8', tokenCount: 19900, contextWindowSize: 200000, tokenSamples: samples },
+    ],
+  };
+  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
+  const spark = visible.match(/[▁▂▃▄▅▆▇█]+/)[0];
+  assert.ok(spark.length <= 8, `sparkline of ${spark.length} cells is uncapped: ${spark}`);
+});
+
+test('subagent-statusline: omits the sparkline for fewer than two samples', () => {
+  const payload = {
+    columns: 120,
+    tasks: [
+      { id: 'a', model: 'claude-opus-4-8', tokenCount: 5, contextWindowSize: 200000, tokenSamples: [5] },
+      { id: 'b', model: 'claude-opus-4-8', tokenCount: 5, contextWindowSize: 200000, tokenSamples: [] },
+      { id: 'c', model: 'claude-opus-4-8', tokenCount: 5, contextWindowSize: 200000 },
+      { id: 'd', model: 'claude-opus-4-8', tokenCount: 5, contextWindowSize: 200000, tokenSamples: 'nope' },
+    ],
+  };
+  for (const row of rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)) {
+    const visible = plain(row.content);
+    assert.ok(!/[▁▂▃▄▅▆▇█]/.test(visible), `unexpected sparkline: ${visible}`);
+    assert.strictEqual(visible, 'Opus 4.8 5/200k');
+  }
+});
+
+test('subagent-statusline: the sparkline counts against the description budget', () => {
+  const columns = 60;
+  const payload = {
+    columns,
+    tasks: [
+      {
+        id: 'a',
+        model: 'claude-opus-4-8',
+        description: 'z'.repeat(300),
+        tokenCount: 12022,
+        contextWindowSize: 200000,
+        tokenSamples: [0, 4000, 8000, 12022],
+        startTime: Date.now() - 7325000,
+      },
+    ],
+  };
+  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
+  assert.ok(/[▁▂▃▄▅▆▇█]/.test(visible), visible);
+  assert.ok(visible.length <= columns, `row of ${visible.length} exceeds columns=${columns}: ${visible}`);
 });
 
 test('subagent-statusline: defaults to 80 columns when columns is absent or invalid', () => {

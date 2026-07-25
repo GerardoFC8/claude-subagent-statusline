@@ -7,6 +7,38 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.12.0] — 2026-07-25
+
+Driven by inspecting a real captured `subagentStatusLine` payload rather than synthetic fixtures. The v0.11.0 rows were built against assumed field values; the capture showed which fields actually arrive, and this release fixes what that revealed.
+
+### Added
+
+- **Consumption-trend sparkline on per-subagent rows** — each row now draws the recent token-consumption trend (`▁▂▄▅█`) from the payload's `tokenSamples`, normalised against the window's own min/max. A rising line is a working sub-agent, a flat line is one that stopped consuming. Paired with the new elapsed segment, this is what distinguishes a slow sub-agent from a stalled one, which neither the elapsed time nor the context figure can do alone. Capped to the last 8 samples so the unbounded series cannot widen the row, and omitted when fewer than two samples are present.
+- **Elapsed time on per-subagent rows** — each row shows how long that sub-agent has been running, measured from the task's `startTime`.
+- **Shared duration formatter (`scripts/lib/duration.js`)** — `formatDuration` now backs both the session clock and the per-subagent clock, so the two format identically by construction. Previously the logic lived inline in `scripts/statusline.js` with no named function, which would have become a second divergent implementation the moment the sub-agent rows needed a clock.
+
+### Changed
+
+- **Context usage renders as absolute tokens, not a percentage** — rows now show `24k/200k` instead of `12%`, so the remaining headroom is readable without arithmetic. Counts below 1000 render exactly (`842/200k`).
+- **The internal `local_agent` task type is suppressed** — Claude Code sends `type: "local_agent"` for every foreground sub-agent, so the column was identical on every row and conveyed nothing while consuming width and description budget. Verified against a captured payload: the agent type requested at delegation time (`Explore`, `general-purpose`, …) is not exposed in any payload field, and neither `name` nor `label` carries it (`name` is absent entirely; `label` duplicates `description`). Types that are not known internal placeholders still render.
+- **`scripts/statusline.js`** — the elapsed segment now uses the shared formatter. Output is byte-identical.
+- **`README.md` / `README.en.md`** — the per-subagent rows section documents the sparkline, the absolute context figure, and the elapsed segment, and explains why the type column is normally absent. Test count bumped to 216.
+- **Version** bumped to `0.12.0` across `plugin.json`, `package.json`, and `marketplace.json`.
+
+### Known limitations
+
+- **`effort` is absent from the real per-task payload** for ordinary delegations, so the effort suffix added in `0.11.0` renders for almost nobody. The omission logic is correct (no empty parentheses) and the suffix appears if the field ever arrives.
+
+### Updating
+
+```
+claude plugin update claude-subagent-statusline@claude-subagent-statusline
+```
+
+Restart Claude Code to apply.
+
+---
+
 ## [0.11.0] — 2026-07-09
 
 ### Added
