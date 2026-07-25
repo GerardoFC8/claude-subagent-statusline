@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { REPO_ROOT, runScript } = require('./_helpers');
+const { visibleWidth } = require('../scripts/lib/width');
 
 const SCRIPT = path.join(REPO_ROOT, 'scripts', 'subagent-statusline.js');
 
@@ -152,7 +153,10 @@ test('subagent-statusline: renders elapsed alongside the context usage', () => {
     ],
   };
   const r = runScript(SCRIPT, JSON.stringify(payload));
-  assert.strictEqual(plain(rows(r.stdout)[0].content), 'Haiku 4.5 · work 50k/200k · 2h 2m');
+  assert.strictEqual(
+    plain(rows(r.stdout)[0].content),
+    'Haiku 4.5 · work ████░░░░░░░░░░░░ 50k/200k · 2h 2m',
+  );
 });
 
 test('subagent-statusline: omits elapsed when startTime is missing or unusable', () => {
@@ -369,7 +373,7 @@ test('subagent-statusline: description is dropped entirely when the budget is ti
 // context-window percentage
 // ---------------------------------------------------------------------------
 
-test('subagent-statusline: appends context usage as used/window, not a percentage', () => {
+test('subagent-statusline: appends a context bar and the absolute usage, not a percentage', () => {
   const payload = {
     columns: 120,
     tasks: [
@@ -378,25 +382,37 @@ test('subagent-statusline: appends context usage as used/window, not a percentag
   };
   const r = runScript(SCRIPT, JSON.stringify(payload));
   const visible = plain(rows(r.stdout)[0].content);
-  assert.strictEqual(visible, 'Opus 4.8 50k/200k');
+  // 25% of a 16-cell bar is 4 filled cells.
+  assert.strictEqual(visible, 'Opus 4.8 ████░░░░░░░░░░░░ 50k/200k');
   assert.ok(!/\d%/.test(visible), `percentage must be gone: ${visible}`);
 });
 
-test('subagent-statusline: abbreviates thousands and keeps small counts exact', () => {
+test('subagent-statusline: abbreviates thousands and scales millions', () => {
   const payload = {
     columns: 120,
     tasks: [
       { id: 'a', model: 'claude-opus-4-8', tokenCount: 842, contextWindowSize: 200000 },
-      { id: 'b', model: 'claude-opus-4-8', tokenCount: 0, contextWindowSize: 200000 },
-      { id: 'c', model: 'claude-opus-4-8', tokenCount: 12022, contextWindowSize: 200000 },
-      { id: 'd', model: 'claude-opus-4-8', tokenCount: 1000000, contextWindowSize: 1000000 },
+      { id: 'b', model: 'claude-opus-4-8', tokenCount: 12022, contextWindowSize: 200000 },
+      { id: 'c', model: 'claude-opus-4-8', tokenCount: 20000, contextWindowSize: 1000000 },
+      { id: 'd', model: 'claude-opus-4-8', tokenCount: 1500000, contextWindowSize: 2000000 },
     ],
   };
   const out = rows(runScript(SCRIPT, JSON.stringify(payload)).stdout);
-  assert.strictEqual(plain(out[0].content), 'Opus 4.8 842/200k');
-  assert.strictEqual(plain(out[1].content), 'Opus 4.8 0/200k');
-  assert.strictEqual(plain(out[2].content), 'Opus 4.8 12k/200k');
-  assert.strictEqual(plain(out[3].content), 'Opus 4.8 1000k/1000k');
+  assert.ok(plain(out[0].content).endsWith(' 842/200k'), plain(out[0].content));
+  assert.ok(plain(out[1].content).endsWith(' 12k/200k'), plain(out[1].content));
+  // A 1M window must not read as "1000k".
+  assert.ok(plain(out[2].content).endsWith(' 20k/1M'), plain(out[2].content));
+  assert.ok(plain(out[3].content).endsWith(' 1.5M/2M'), plain(out[3].content));
+});
+
+test('subagent-statusline: keeps the exact count below one thousand for fractional values', () => {
+  // The threshold must test the raw value, not the rounded one, or 999.6 reads
+  // as "1k" while being under a thousand.
+  const payload = {
+    columns: 120,
+    tasks: [{ id: 'a', model: 'claude-opus-4-8', tokenCount: 999.6, contextWindowSize: 200000 }],
+  };
+  assert.ok(plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content).endsWith(' 999/200k'));
 });
 
 test('subagent-statusline: no context segment when contextWindowSize is zero or missing', () => {
@@ -414,90 +430,64 @@ test('subagent-statusline: no context segment when contextWindowSize is zero or 
 });
 
 // ---------------------------------------------------------------------------
-// tokenSamples sparkline
+// context fill bar
 // ---------------------------------------------------------------------------
 
-test('subagent-statusline: renders a sparkline from tokenSamples', () => {
+test('subagent-statusline: the bar is a fixed width regardless of usage', () => {
+  // A bar that changed width between ticks would make the row jump around.
   const payload = {
     columns: 120,
     tasks: [
-      {
-        id: 'a',
-        model: 'claude-opus-4-8',
-        tokenCount: 12022,
-        contextWindowSize: 200000,
-        tokenSamples: [0, 12012, 12022],
-      },
-    ],
-  };
-  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
-  assert.ok(/[▁▂▃▄▅▆▇█]{3}/.test(visible), `expected a 3-cell sparkline, got: ${visible}`);
-  assert.ok(visible.endsWith('12k/200k'), visible);
-});
-
-test('subagent-statusline: a flat sample series renders a flat sparkline', () => {
-  // This is the stall signal: a sub-agent that stopped consuming tokens shows a
-  // level line instead of a rising one.
-  const payload = {
-    columns: 120,
-    tasks: [
-      { id: 'a', model: 'claude-opus-4-8', tokenCount: 900, contextWindowSize: 200000, tokenSamples: [900, 900, 900, 900] },
-    ],
-  };
-  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
-  assert.ok(visible.includes('▁▁▁▁'), `expected a flat sparkline, got: ${visible}`);
-});
-
-test('subagent-statusline: a rising series ends higher than it starts', () => {
-  const payload = {
-    columns: 120,
-    tasks: [
-      { id: 'a', model: 'claude-opus-4-8', tokenCount: 80, contextWindowSize: 200000, tokenSamples: [0, 40, 80] },
-    ],
-  };
-  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
-  const spark = visible.match(/[▁▂▃▄▅▆▇█]+/)[0];
-  const cells = '▁▂▃▄▅▆▇█';
-  assert.strictEqual(spark.length, 3);
-  assert.ok(
-    cells.indexOf(spark[2]) > cells.indexOf(spark[0]),
-    `expected a rising sparkline, got: ${spark}`,
-  );
-});
-
-test('subagent-statusline: caps the sparkline so an unbounded series cannot grow the row', () => {
-  // tokenSamples accumulates one entry per tick and never shrinks, so the row
-  // would widen forever without a cap.
-  const samples = Array.from({ length: 200 }, (_, i) => i * 100);
-  const payload = {
-    columns: 120,
-    tasks: [
-      { id: 'a', model: 'claude-opus-4-8', tokenCount: 19900, contextWindowSize: 200000, tokenSamples: samples },
-    ],
-  };
-  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
-  const spark = visible.match(/[▁▂▃▄▅▆▇█]+/)[0];
-  assert.ok(spark.length <= 8, `sparkline of ${spark.length} cells is uncapped: ${spark}`);
-});
-
-test('subagent-statusline: omits the sparkline for fewer than two samples', () => {
-  const payload = {
-    columns: 120,
-    tasks: [
-      { id: 'a', model: 'claude-opus-4-8', tokenCount: 5, contextWindowSize: 200000, tokenSamples: [5] },
-      { id: 'b', model: 'claude-opus-4-8', tokenCount: 5, contextWindowSize: 200000, tokenSamples: [] },
-      { id: 'c', model: 'claude-opus-4-8', tokenCount: 5, contextWindowSize: 200000 },
-      { id: 'd', model: 'claude-opus-4-8', tokenCount: 5, contextWindowSize: 200000, tokenSamples: 'nope' },
+      { id: 'a', model: 'claude-opus-4-8', tokenCount: 0, contextWindowSize: 200000 },
+      { id: 'b', model: 'claude-opus-4-8', tokenCount: 100000, contextWindowSize: 200000 },
+      { id: 'c', model: 'claude-opus-4-8', tokenCount: 200000, contextWindowSize: 200000 },
     ],
   };
   for (const row of rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)) {
-    const visible = plain(row.content);
-    assert.ok(!/[▁▂▃▄▅▆▇█]/.test(visible), `unexpected sparkline: ${visible}`);
-    assert.strictEqual(visible, 'Opus 4.8 5/200k');
+    const cells = plain(row.content).match(/[█░]+/)[0];
+    assert.strictEqual(cells.length, 16, `bar of ${cells.length} cells: ${plain(row.content)}`);
   }
 });
 
-test('subagent-statusline: the sparkline counts against the description budget', () => {
+test('subagent-statusline: the bar tracks the share of the window consumed', () => {
+  const payload = {
+    columns: 120,
+    tasks: [
+      { id: 'a', model: 'claude-opus-4-8', tokenCount: 0, contextWindowSize: 200000 },
+      { id: 'b', model: 'claude-opus-4-8', tokenCount: 100000, contextWindowSize: 200000 },
+      { id: 'c', model: 'claude-opus-4-8', tokenCount: 200000, contextWindowSize: 200000 },
+    ],
+  };
+  const out = rows(runScript(SCRIPT, JSON.stringify(payload)).stdout);
+  assert.ok(plain(out[0].content).includes('░░░░░░░░░░░░░░░░'), plain(out[0].content));
+  assert.ok(plain(out[1].content).includes('████████░░░░░░░░'), plain(out[1].content));
+  assert.ok(plain(out[2].content).includes('████████████████'), plain(out[2].content));
+});
+
+test('subagent-statusline: any consumption at all shows at least one filled cell', () => {
+  // On a 1M window, 20k rounds to zero cells. Showing an empty bar for a
+  // sub-agent that is actively consuming would be misleading.
+  const payload = {
+    columns: 120,
+    tasks: [{ id: 'a', model: 'claude-opus-4-8', tokenCount: 20000, contextWindowSize: 1000000 }],
+  };
+  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
+  assert.ok(visible.includes('█░░░░░░░░░░░░░░░'), visible);
+});
+
+test('subagent-statusline: usage above the window clamps the bar instead of overflowing it', () => {
+  const payload = {
+    columns: 120,
+    tasks: [{ id: 'a', model: 'claude-opus-4-8', tokenCount: 500000, contextWindowSize: 200000 }],
+  };
+  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
+  const cells = visible.match(/[█░]+/)[0];
+  assert.strictEqual(cells, '████████████████');
+  // The figure still tells the truth about being over the window.
+  assert.ok(visible.endsWith('500k/200k'), visible);
+});
+
+test('subagent-statusline: the bar counts against the description budget', () => {
   const columns = 60;
   const payload = {
     columns,
@@ -508,14 +498,77 @@ test('subagent-statusline: the sparkline counts against the description budget',
         description: 'z'.repeat(300),
         tokenCount: 12022,
         contextWindowSize: 200000,
-        tokenSamples: [0, 4000, 8000, 12022],
         startTime: Date.now() - 7325000,
       },
     ],
   };
   const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
-  assert.ok(/[▁▂▃▄▅▆▇█]/.test(visible), visible);
-  assert.ok(visible.length <= columns, `row of ${visible.length} exceeds columns=${columns}: ${visible}`);
+  assert.ok(visibleWidth(visible) <= columns, `row of ${visibleWidth(visible)} exceeds columns=${columns}: ${visible}`);
+});
+
+// ---------------------------------------------------------------------------
+// the row never exceeds `columns`
+// ---------------------------------------------------------------------------
+
+test('subagent-statusline: sheds optional segments so a narrow pane still fits', () => {
+  // Truncating the description alone cannot honour `columns` once the fixed
+  // segments exceed it on their own.
+  const base = {
+    model: 'claude-opus-4-8',
+    effort: 'xhigh',
+    type: 'general-purpose',
+    description: 'a fairly long description that will not fit',
+    tokenCount: 12022,
+    contextWindowSize: 200000,
+    startTime: Date.now() - 7325000,
+  };
+  for (const columns of [1, 2, 5, 10, 20, 30, 40, 55, 80, 120]) {
+    const r = runScript(SCRIPT, JSON.stringify({ columns, tasks: [{ id: 'a', ...base }] }));
+    assert.strictEqual(r.status, 0);
+    const visible = plain(rows(r.stdout)[0].content);
+    assert.ok(
+      visibleWidth(visible) <= columns,
+      `columns=${columns} produced width ${visibleWidth(visible)}: ${visible}`,
+    );
+  }
+});
+
+test('subagent-statusline: a wide-character description is budgeted by rendered width', () => {
+  // Each CJK character occupies two columns while String.length reports one.
+  const columns = 40;
+  const payload = {
+    columns,
+    tasks: [
+      {
+        id: 'a',
+        model: 'claude-opus-4-8',
+        description: '日本語のテキストがとても長い場合はどうなるか',
+        tokenCount: 12022,
+        contextWindowSize: 200000,
+      },
+    ],
+  };
+  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
+  assert.ok(visibleWidth(visible) <= columns, `width ${visibleWidth(visible)}: ${visible}`);
+});
+
+test('subagent-statusline: truncation never splits an emoji into a broken glyph', () => {
+  const payload = {
+    columns: 40,
+    tasks: [
+      {
+        id: 'a',
+        model: 'claude-opus-4-8',
+        description: '🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀',
+        tokenCount: 12022,
+        contextWindowSize: 200000,
+      },
+    ],
+  };
+  const visible = plain(rows(runScript(SCRIPT, JSON.stringify(payload)).stdout)[0].content);
+  // Strip well-formed pairs; any surrogate left over is a severed half.
+  const orphans = visible.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '');
+  assert.ok(!/[\uD800-\uDFFF]/.test(orphans), `severed surrogate in: ${JSON.stringify(visible)}`);
 });
 
 test('subagent-statusline: defaults to 80 columns when columns is absent or invalid', () => {

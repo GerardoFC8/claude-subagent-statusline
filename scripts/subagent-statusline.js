@@ -14,6 +14,9 @@ const fs = require('fs');
 const { parseModelFromId } = require('./lib/model');
 // Shared with scripts/statusline.js so both clocks format identically.
 const { formatDuration } = require('./lib/duration');
+// Rendered-column measurement. String.length is the wrong ruler here: a CJK
+// description under-reports and an emoji must not be cut mid-surrogate.
+const { visibleWidth, truncateToWidth } = require('./lib/width');
 
 // Task types Claude Code uses internally rather than to describe the agent. They
 // are identical across every foreground sub-agent, so rendering them costs width
@@ -21,36 +24,37 @@ const { formatDuration } = require('./lib/duration');
 // agent type ("Explore", "general-purpose", …) is not exposed in any field.
 const INTERNAL_TASK_TYPES = new Set(['local_agent']);
 
-// Sparkline cells, lowest to highest.
-const SPARK_CELLS = '▁▂▃▄▅▆▇█';
-// tokenSamples accumulates one entry per tick and never shrinks, so only the
-// most recent samples are drawn — otherwise the row would widen without bound.
-const SPARK_MAX_CELLS = 8;
+// Context-fill bar. Fixed width so the row never changes shape between ticks and
+// each tick advances at most one cell — the finest step this many cells allows.
+const BAR_FILLED = '█';
+const BAR_EMPTY = '░';
+const BAR_CELLS = 16;
 
-// Compact token count: exact below 1000, abbreviated in thousands above it.
+// Compact token count. Scales through thousands and millions so a 1M context
+// window reads "1M" rather than "1000k". The threshold test runs on the raw
+// value, not the rounded one, so 999.6 stays under the "exact" branch.
 function formatTokens(n) {
   if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return null;
-  const v = Math.round(n);
-  return v < 1000 ? String(v) : `${Math.round(v / 1000)}k`;
+  if (n < 1000) return String(Math.floor(n));
+  if (n < 1000000) return `${Math.round(n / 1000)}k`;
+  const m = n / 1000000;
+  // One decimal below 10M keeps 1.5M distinguishable from 1M without widening
+  // the segment; above that the decimal is noise.
+  return m < 10 ? `${Math.round(m * 10) / 10}M` : `${Math.round(m)}M`;
 }
 
-// Draw the recent token-consumption trend. Normalising against the window's own
-// min/max means a sub-agent that stopped consuming renders a flat line, which is
-// the stall signal; a working one renders a rising one.
-function sparkline(samples) {
-  if (!Array.isArray(samples)) return '';
-  const nums = samples.filter((s) => typeof s === 'number' && Number.isFinite(s));
-  if (nums.length < 2) return '';
-  const recent = nums.slice(-SPARK_MAX_CELLS);
-  const min = Math.min(...recent);
-  const max = Math.max(...recent);
-  const span = max - min;
-  return recent
-    .map((v) => {
-      const idx = span === 0 ? 0 : Math.round(((v - min) / span) * (SPARK_CELLS.length - 1));
-      return SPARK_CELLS[idx];
-    })
-    .join('');
+// Draw context usage as a fixed-width fill bar. Unlike a min/max-normalised
+// trend, this is an absolute scale: two rows with the same bar have consumed the
+// same share of their window, and the bar cannot exaggerate a small movement.
+function contextBar(used, total) {
+  if (typeof used !== 'number' || !Number.isFinite(used) || used < 0) return '';
+  if (typeof total !== 'number' || !Number.isFinite(total) || total <= 0) return '';
+  const ratio = Math.min(1, used / total);
+  let filled = Math.round(ratio * BAR_CELLS);
+  // Any consumption at all shows at least one cell, so a busy sub-agent on a 1M
+  // window is never indistinguishable from one that has consumed nothing.
+  if (filled === 0 && used > 0) filled = 1;
+  return BAR_FILLED.repeat(filled) + BAR_EMPTY.repeat(BAR_CELLS - filled);
 }
 
 const RESET = '\x1b[0m';
@@ -86,48 +90,72 @@ function main() {
     const effort =
       typeof effortRaw === 'string' && effortRaw.trim() ? ` (${effortRaw.trim()})` : '';
 
-    // Context usage as absolute tokens against the window ("12k/200k"), preceded
-    // by the recent consumption trend when the payload carries enough samples.
-    let ctx = '';
-    if (
-      typeof t.tokenCount === 'number' &&
+    // Context usage: a fixed-width fill bar plus the absolute figure. Both need
+    // tokenCount and contextWindowSize, so they appear and disappear together.
+    const bar = contextBar(t.tokenCount, t.contextWindowSize);
+    const usedTok = formatTokens(t.tokenCount);
+    // A window of 0 is meaningless, and formatTokens(0) legitimately returns "0",
+    // so the window needs its own positive check or the figure reads "5/0".
+    const hasWindow =
       typeof t.contextWindowSize === 'number' &&
-      t.contextWindowSize > 0
-    ) {
-      const used = formatTokens(t.tokenCount);
-      const window = formatTokens(t.contextWindowSize);
-      if (used !== null && window !== null) {
-        const spark = sparkline(t.tokenSamples);
-        ctx = `${spark ? ` ${spark}` : ''} ${used}/${window}`;
-      }
-    }
+      Number.isFinite(t.contextWindowSize) &&
+      t.contextWindowSize > 0;
+    const totalTok = hasWindow ? formatTokens(t.contextWindowSize) : null;
+    const usage = usedTok !== null && totalTok !== null ? `${usedTok}/${totalTok}` : '';
 
     // How long this sub-agent has been running. `startTime` is epoch milliseconds.
     const elapsed =
       typeof t.startTime === 'number' ? formatDuration((Date.now() - t.startTime) / 1000) : null;
 
-    // Trailing live metrics. The leading separator keeps a lone elapsed value from
-    // reading as part of the description.
-    const tail = ctx + (elapsed ? `${SEP}${elapsed}` : '');
+    // Every width decision below is made on plain text and measured in rendered
+    // columns, then colour is applied to whatever survived. Slicing an
+    // already-coloured string would cut through an escape sequence and leave the
+    // colour open for the rest of the line.
+    const head = (model || '⋯') + effort;
+    const keep = { type: !!type, bar: !!bar, usage: !!usage, elapsed: !!elapsed };
 
-    // Budget the description against the visible (ANSI-free) width so the row
-    // never overflows the terminal. `⋯` is the zero-model fallback width.
-    const modelPlain = model || '⋯';
-    const fixed =
-      modelPlain.length + effort.length + (type ? SEP.length + type.length : 0) + tail.length;
-    const descBudget = columns - fixed - SEP.length - 2;
-    let descOut = desc;
-    if (descBudget <= 1) descOut = '';
-    else if (desc.length > descBudget) descOut = desc.slice(0, descBudget - 1) + '…';
+    const tailText = () => {
+      let s = '';
+      if (keep.bar) s += ` ${bar}`;
+      if (keep.usage) s += ` ${usage}`;
+      if (keep.elapsed) s += `${SEP}${elapsed}`;
+      return s;
+    };
+    const rowWidth = (descText) =>
+      visibleWidth(head) +
+      (keep.type ? visibleWidth(SEP + type) : 0) +
+      (descText ? visibleWidth(SEP + descText) : 0) +
+      visibleWidth(tailText());
+
+    // Give the description whatever the fixed pieces leave over.
+    let descOut = '';
+    const fitDescription = () => {
+      const avail = columns - rowWidth('') - visibleWidth(SEP);
+      descOut = avail > 1 ? truncateToWidth(desc, avail) : '';
+    };
+    fitDescription();
+
+    // Truncating the description alone cannot honour `columns` once the fixed
+    // pieces exceed it on their own, which happens on narrow panes. Shed optional
+    // segments least-informative-first until the row fits.
+    for (const segment of ['type', 'bar', 'elapsed', 'usage']) {
+      if (rowWidth(descOut) <= columns) break;
+      keep[segment] = false;
+      fitDescription();
+    }
+
+    // Last resort: even the model alone does not fit.
+    const headOut = rowWidth(descOut) > columns ? truncateToWidth(head, columns) : head;
 
     const modelSeg = model
       ? `${BOLD}${CYAN}${model}${RESET}${effort ? `${DIM}${effort}${RESET}` : ''}`
-      : `${DIM}⋯${effort}${RESET}`;
-    const segs = [modelSeg];
-    if (type) segs.push(`${DIM}${type}${RESET}`);
+      : `${DIM}${headOut}${RESET}`;
+    const segs = [headOut === head ? modelSeg : `${BOLD}${CYAN}${headOut}${RESET}`];
+    if (keep.type) segs.push(`${DIM}${type}${RESET}`);
     if (descOut) segs.push(descOut);
 
     let content = segs.join(SEP);
+    const tail = tailText();
     if (tail) content += `${DIM}${tail}${RESET}`;
 
     out.push(JSON.stringify({ id: t.id, content }));
