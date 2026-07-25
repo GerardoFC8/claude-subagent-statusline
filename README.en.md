@@ -172,7 +172,7 @@ node --version   # must be >= 18
 npm test
 ```
 
-All changes must pass `npm test` (180 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
+All changes must pass `npm test` (193 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
 
 ## License
 

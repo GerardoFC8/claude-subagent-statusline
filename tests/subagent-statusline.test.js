@@ -63,6 +63,42 @@ test('subagent-statusline: resolves model names across id formats', () => {
   assert.ok(plain(out[3].content).startsWith('Fable 5'), plain(out[3].content));
 });
 
+test('subagent-statusline: resolves Bedrock-style model ids', () => {
+  const payload = {
+    columns: 200,
+    tasks: [
+      { id: 'a', model: 'us.anthropic.claude-sonnet-5-v1:0' },
+      { id: 'b', model: 'us.anthropic.claude-3-5-sonnet-20240620-v1:0' },
+    ],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  assert.strictEqual(r.status, 0);
+  const out = rows(r.stdout);
+  assert.strictEqual(out.length, 2);
+  // Exact equality on purpose: startsWith('Sonnet 5') would also accept the
+  // "Sonnet 5.v1" regression, where the revision leaks into the version.
+  assert.strictEqual(plain(out[0].content), 'Sonnet 5');
+  assert.strictEqual(plain(out[1].content), 'Sonnet 3.5');
+});
+
+test('subagent-statusline: non-Claude model ids fall back to ⋯ instead of a guess', () => {
+  // The parser must not manufacture a label from an unrelated id — "gpt-4o-mini"
+  // rendering as "Gpt 4o.mini" would be worse than showing nothing.
+  const payload = {
+    columns: 80,
+    tasks: [
+      { id: 'a', model: 'gpt-4o-mini' },
+      { id: 'b', model: 'some-custom-model' },
+    ],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  const out = rows(r.stdout);
+  assert.strictEqual(out.length, 2);
+  for (const row of out) {
+    assert.ok(plain(row.content).startsWith('⋯'), `expected ⋯ fallback, got: ${plain(row.content)}`);
+  }
+});
+
 test('subagent-statusline: unresolved/empty model falls back to ⋯', () => {
   const payload = {
     columns: 80,

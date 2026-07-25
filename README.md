@@ -172,7 +172,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (180 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (193 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 

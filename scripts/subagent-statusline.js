@@ -9,34 +9,14 @@
 'use strict';
 
 const fs = require('fs');
+// Shared with scripts/statusline.js. Returns null for unrecognised ids, which is
+// what drives the dim ⋯ fallback below — the per-task payload has no display_name.
+const { parseModelFromId } = require('./lib/model');
 
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
 const DIM = '\x1b[2m';
 const CYAN = '\x1b[36m';
-
-// Resolve a raw model id to a compact, human-readable label. Mirrors the parsing
-// used by scripts/statusline.js for the main model, but tolerates the wider set
-// of id shapes Claude Code emits for sub-agents:
-//   claude-opus-4-8[1m]          → "Opus 4.8"
-//   claude-sonnet-5              → "Sonnet 5"
-//   claude-haiku-4-5-20251001    → "Haiku 4.5"
-//   claude-fable-5               → "Fable 5"
-// Returns null for empty/non-string ids so the caller can render the ⋯ fallback.
-function prettyModel(id) {
-  if (typeof id !== 'string' || !id.trim()) return null;
-  let s = id.trim().replace(/\[[^\]]*\]/g, '').replace(/\([^)]*\)/g, '').trim();
-  const at = s.lastIndexOf('claude-');
-  if (at >= 0) s = s.slice(at);
-  s = s.replace(/^claude-/, '').replace(/-\d{8}$/, '').split(/[:@]/)[0];
-  const parts = s.split('-').filter(Boolean);
-  // Id parsed down to zero usable parts (e.g. "claude-"): return null so the
-  // caller renders the dim ⋯ fallback rather than echoing a meaningless raw id.
-  if (!parts.length) return null;
-  const family = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-  const version = parts.slice(1).join('.');
-  return version ? `${family} ${version}` : family;
-}
 
 function readStdin() {
   try { return fs.readFileSync(0, 'utf8'); } catch (_) { return ''; }
@@ -53,7 +33,7 @@ function main() {
   for (const t of data.tasks) {
     if (!t || typeof t.id !== 'string') continue;
 
-    const model = prettyModel(t.model);
+    const model = parseModelFromId(t.model);
     const type = typeof t.type === 'string' ? t.type : typeof t.name === 'string' ? t.name : '';
     const desc = typeof t.description === 'string' ? t.description : '';
 

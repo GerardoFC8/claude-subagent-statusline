@@ -5,20 +5,13 @@
 const fs = require('fs');
 const path = require('path');
 const lib = require('./lib/history');
+// Shared with scripts/subagent-statusline.js. Returns null for unrecognised ids,
+// which keeps the `display_name` fallback below in charge of those cases.
+const { parseModelFromId } = require('./lib/model');
 
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
 const NOBOLD = '\x1b[22m';
-
-function parseModelFromId(id) {
-  if (typeof id !== 'string' || id.length === 0) return '';
-  // claude-opus-4-7 → "Opus 4.7", claude-sonnet-4-6 → "Sonnet 4.6", claude-haiku-4-5 → "Haiku 4.5"
-  const m = id.match(/^claude-(opus|sonnet|haiku)-(\d+)-(\d+)$/i);
-  if (!m) return '';
-  const fam = m[1].toLowerCase();
-  const Fam = fam.charAt(0).toUpperCase() + fam.slice(1);
-  return `${Fam} ${m[2]}.${m[3]}`;
-}
 
 function basenameForFolder(cwd) {
   if (typeof cwd !== 'string' || cwd.length === 0) return '';
