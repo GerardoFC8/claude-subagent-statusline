@@ -41,20 +41,24 @@ my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m
 Además de la statusline agregada, el plugin puede renderizar **una fila por cada sub-agente en ejecución**, cada una encabezada por el **modelo resuelto** en el que corre ese sub-agente (`Opus 4.8`, `Haiku 4.5`, `Sonnet 5`, `Fable 5`…). Usa el segundo contrato de statusline de Claude Code, `subagentStatusLine`: Claude Code envía un único objeto JSON por stdin (`{ ...campos, columns, tasks[] }`) y el plugin imprime una línea `{"id","content"}` por fila.
 
 ```
-Opus 4.8 · Implement the checkout slice ▁▂▄▅█ 24k/200k · 45s
-Sonnet 5 · Audit the changelog entries ▁▃▅▇█ 91k/200k · 2m 10s
-Haiku 4.5 · Map the auth module ▁▁▁▁▁ 8k/200k · 8m 24s
+Sonnet 5 · Adversarial review of the renderer █░░░░░░░░░░░░░░░ 20k/1M · 1m 12s
+Opus 5 · Audit the changelog entries █████░░░░░░░░░░░ 310k/1M · 1m 7s
+Haiku 4.5 · Map the auth module █████████████░░░ 168k/200k · 8m 24s
 ```
 
-Cada fila combina: el **modelo** (en negrita y cian; si Claude Code no expone el modelo del task, cae al placeholder `⋯`), el **effort** de ese sub-agente entre paréntesis (misma escala que el bracket principal; se omite si el payload no lo trae), el **tipo** del sub-agente cuando aporta información, la **descripción** (truncada con `…` para que la fila se mantenga dentro del ancho `columns` de la terminal) y una cola de métricas en vivo: la **tendencia de consumo**, el **contexto usado sobre la ventana** y el **tiempo transcurrido**.
+Cada fila combina: el **modelo** (en negrita y cian; si Claude Code no expone el modelo del task, cae al placeholder `⋯`), el **effort** de ese sub-agente entre paréntesis (se omite si el payload no lo trae, que es lo habitual), el **tipo** del sub-agente cuando aporta información, la **descripción** y una cola de métricas en vivo: la **barra de contexto**, el **contexto usado sobre la ventana** y el **tiempo transcurrido**.
 
-**Tendencia de consumo** (`▁▂▄▅█`) — sparkline de las últimas 8 muestras de `tokenSamples`, normalizado contra su propio mínimo y máximo. Una línea que sube es un sub-agente trabajando; una línea plana es uno que dejó de consumir tokens. Combinado con el tiempo transcurrido, es la forma de detectar a simple vista cuál se colgó: en el ejemplo de arriba, la tercera fila lleva 8 minutos y su consumo no se movió. Se omite si el payload trae menos de dos muestras.
+**Barra de contexto** (`█████░░░░░░░░░░░`) — 16 celdas de ancho fijo que representan la porción de la ventana de contexto que ese sub-agente ya consumió. Es una escala absoluta: dos filas con la misma barra consumieron la misma proporción de su ventana, aunque sus ventanas tengan tamaños distintos. El ancho no cambia entre ticks, así que la fila no salta, y cada tick avanza como máximo una celda. Cualquier consumo distinto de cero llena al menos una celda, para que un sub-agente activo sobre una ventana de 1M no se vea igual que uno que no consumió nada. Si el uso supera la ventana, la barra se satura en 16 celdas y la cifra sigue mostrando el exceso real (`500k/200k`).
 
-**Contexto usado** (`24k/200k`) — tokens consumidos sobre el tamaño de la ventana de ese sub-agente, en valores absolutos y no en porcentaje, para que sepas cuánto le queda sin hacer la cuenta. Por debajo de 1000 se muestra el número exacto.
+**Contexto usado** (`310k/1M`) — tokens consumidos sobre el tamaño de la ventana, en valores absolutos y no en porcentaje, para que sepas cuánto le queda sin hacer la cuenta. Por debajo de 1000 se muestra el número exacto; a partir de ahí se abrevia en miles y, sobre un millón, en millones con un decimal (`1.5M`). La barra y la cifra aparecen y desaparecen juntas: ambas necesitan que el payload traiga `tokenCount` y un `contextWindowSize` mayor que cero.
 
 **Tiempo transcurrido** (`8m 24s`) — desde el `startTime` del task, con el mismo formato que el reloj `⏱` de la statusline principal.
 
+> **Sobre detectar sub-agentes colgados**: la barra te dice cuánto contexto lleva consumido, no si sigue avanzando. Un sub-agente trabado y uno lento se ven igual. La señal práctica es la combinación de un tiempo transcurrido alto con una barra que no se mueve entre refrescos, no un único vistazo a la fila.
+
 > El **tipo** del sub-agente casi nunca aparece: Claude Code manda `local_agent` para todo sub-agente en foreground, un valor interno idéntico en todas las filas, así que el plugin lo suprime en lugar de gastar ancho en ruido. El tipo que pediste al delegar (`Explore`, `general-purpose`…) no viaja en el payload.
+
+**Ancho de la fila** — la fila nunca excede el `columns` que informa Claude Code, y el ancho se mide en columnas renderizadas y no en caracteres, así que una descripción en japonés o con emojis se presupuesta correctamente y el truncado nunca parte un emoji al medio. Cuando el espacio no alcanza, primero se acorta la descripción y después se descartan segmentos por orden de menor valor informativo: el tipo, la barra, el tiempo y por último la cifra de contexto. El modelo nunca se descarta, porque es el dato por el que la fila existe.
 
 El renderizador vive en `scripts/subagent-statusline.js` y se registra automáticamente bajo la clave `subagentStatusLine` de `~/.claude/settings.json`, de forma aditiva: **no toca ni modifica tu `statusLine` existente**. Si ya tenés un `subagentStatusLine` propio, el plugin lo respeta y no lo sobrescribe.
 
@@ -181,7 +185,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (216 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (231 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 

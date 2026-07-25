@@ -7,6 +7,34 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.13.0] — 2026-07-25
+
+Follow-up to `0.12.0`, driven by an adversarial probe of the renderer and an audit of the shipped docs against the shipped code. Both found real defects; the row now guarantees the width contract it always claimed.
+
+### Added
+
+- **Rendered-width measurement (`scripts/lib/width.js`)** — `visibleWidth` and `truncateToWidth` measure and cut strings in terminal columns rather than UTF-16 code units. `String.length` was the wrong ruler in both directions: a CJK description reported half its true width and overflowed the row, while truncating an emoji description sliced through a surrogate pair and emitted a broken `�` glyph.
+- **Hard row-width guarantee** — a row now never exceeds the reported `columns`. Truncating the description alone could not honour that: once the fixed segments exceeded the width on their own, the description was dropped and the row still printed at full length. Segments are now shed in order of least informative value (type, bar, elapsed, context figure) until the row fits, and the model is truncated only as a last resort. All width decisions are made on plain text before colour is applied, so the cap can never cut through an ANSI escape and leave the colour open.
+
+### Changed
+
+- **The consumption sparkline is replaced by a fixed-width context fill bar.** The sparkline normalised against its own min/max, which made it scale-free: a 12-token climb across four samples rendered as a full-height rise, and a flat line required byte-identical samples. It detected *movement*, not *rate*, so a nearly-stalled sub-agent was visually indistinguishable from a heavily-consuming one — the stall detection the `0.12.0` notes claimed was largely illusory. The bar is an absolute scale on the window, is 16 cells wide at all times so the row never changes shape, advances at most one cell per tick, and fills at least one cell for any non-zero consumption so an active sub-agent on a 1M window is never indistinguishable from an idle one. Usage above the window saturates the bar while the figure still shows the excess.
+- **Token counts scale through millions** — a 1M context window now reads `20k/1M` instead of `20k/1000k`, with one decimal below 10M (`1.5M`).
+- **`formatTokens` tests the raw value against the 1000 threshold**, not the rounded one, so `999.6` renders `999` rather than `1k`.
+- **The context figure requires a positive window** independently of the token count. `formatTokens(0)` legitimately returns `"0"`, so a `contextWindowSize` of zero rendered as `5/0`.
+- **`README.md` / `README.en.md`** — the rows section documents the bar, the width guarantee and the shedding order, and states plainly that the bar does not detect stalls. Four inaccuracies carried by the `0.12.0` docs are corrected: the trend's omission conditions, the unconditional width promise, the "exact below 1000" claim, and the overstated stall-detection reading. Test count bumped to 231.
+- **Version** bumped to `0.13.0` across `plugin.json`, `package.json`, and `marketplace.json`.
+
+### Updating
+
+```
+claude plugin update claude-subagent-statusline@claude-subagent-statusline
+```
+
+Restart Claude Code to apply.
+
+---
+
 ## [0.12.0] — 2026-07-25
 
 Driven by inspecting a real captured `subagentStatusLine` payload rather than synthetic fixtures. The v0.11.0 rows were built against assumed field values; the capture showed which fields actually arrive, and this release fixes what that revealed.

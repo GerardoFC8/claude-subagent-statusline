@@ -41,20 +41,24 @@ my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m
 On top of the aggregate statusline, the plugin can render **one row per running sub-agent**, each leading with the **resolved model** that sub-agent runs on (`Opus 4.8`, `Haiku 4.5`, `Sonnet 5`, `Fable 5`…). It uses Claude Code's second statusline contract, `subagentStatusLine`: Claude Code pipes a single JSON object on stdin (`{ ...baseFields, columns, tasks[] }`) and the plugin writes one `{"id","content"}` line per row.
 
 ```
-Opus 4.8 · Implement the checkout slice ▁▂▄▅█ 24k/200k · 45s
-Sonnet 5 · Audit the changelog entries ▁▃▅▇█ 91k/200k · 2m 10s
-Haiku 4.5 · Map the auth module ▁▁▁▁▁ 8k/200k · 8m 24s
+Sonnet 5 · Adversarial review of the renderer █░░░░░░░░░░░░░░░ 20k/1M · 1m 12s
+Opus 5 · Audit the changelog entries █████░░░░░░░░░░░ 310k/1M · 1m 7s
+Haiku 4.5 · Map the auth module █████████████░░░ 168k/200k · 8m 24s
 ```
 
-Each row combines: the **model** (bold cyan; falls back to the `⋯` placeholder when Claude Code does not expose the task's model), that sub-agent's **effort** in parentheses (same scale as the main bracket; omitted when the payload does not carry it), the sub-agent **type** when it carries information, the **description** (truncated with `…` so the row stays within the terminal's `columns` width), and a tail of live metrics: the **consumption trend**, the **context used against the window**, and the **elapsed time**.
+Each row combines: the **model** (bold cyan; falls back to the `⋯` placeholder when Claude Code does not expose the task's model), that sub-agent's **effort** in parentheses (omitted when the payload does not carry it, which is the usual case), the sub-agent **type** when it carries information, the **description**, and a tail of live metrics: the **context bar**, the **context used against the window**, and the **elapsed time**.
 
-**Consumption trend** (`▁▂▄▅█`) — a sparkline over the last 8 `tokenSamples` entries, normalised against their own min and max. A rising line is a sub-agent doing work; a flat line is one that stopped consuming tokens. Paired with the elapsed time, this is how you spot a stalled agent at a glance: in the example above, the third row has been running for 8 minutes and its consumption has not moved. Omitted when the payload carries fewer than two samples.
+**Context bar** (`█████░░░░░░░░░░░`) — a fixed 16-cell bar showing the share of its context window that sub-agent has consumed. It is an absolute scale: two rows with the same bar have consumed the same proportion of their window, even when those windows differ in size. The width never changes between ticks, so the row does not jump, and a tick advances the bar by at most one cell. Any non-zero consumption fills at least one cell, so an active sub-agent on a 1M window never looks identical to one that has consumed nothing. If usage exceeds the window the bar saturates at 16 cells while the figure keeps telling the truth (`500k/200k`).
 
-**Context used** (`24k/200k`) — tokens consumed against that sub-agent's window size, as absolute values rather than a percentage, so you can see the headroom without doing the arithmetic. Counts below 1000 render exactly.
+**Context used** (`310k/1M`) — tokens consumed against the window size, as absolute values rather than a percentage, so you can see the headroom without doing the arithmetic. Counts below 1000 render exactly; above that they abbreviate in thousands, and past a million in millions with one decimal (`1.5M`). The bar and the figure appear and disappear together: both require the payload to carry `tokenCount` and a `contextWindowSize` greater than zero.
 
 **Elapsed** (`8m 24s`) — measured from the task's `startTime`, formatted exactly like the `⏱` clock on the main statusline.
 
+> **On spotting stalled sub-agents**: the bar tells you how much context has been consumed, not whether it is still moving. A stalled sub-agent and a slow one look the same. The practical signal is a high elapsed time paired with a bar that does not move between refreshes, not a single glance at the row.
+
 > The sub-agent **type** rarely shows up: Claude Code sends `local_agent` for every foreground sub-agent, an internal value identical across all rows, so the plugin suppresses it rather than spending width on noise. The agent type you requested when delegating (`Explore`, `general-purpose`, …) is not carried in the payload at all.
+
+**Row width** — a row never exceeds the `columns` Claude Code reports, and width is measured in rendered columns rather than characters, so a Japanese or emoji-bearing description is budgeted correctly and truncation never severs an emoji. When space runs short the description is shortened first, then segments are dropped in order of least informative value: the type, the bar, the elapsed time, and finally the context figure. The model is never dropped, since it is what the row exists to show.
 
 The renderer lives at `scripts/subagent-statusline.js` and is registered automatically under the `subagentStatusLine` key of `~/.claude/settings.json`, additively: it **never touches or changes your existing `statusLine`**. If you already have your own `subagentStatusLine`, the plugin leaves it intact and does not overwrite it.
 
@@ -181,7 +185,7 @@ node --version   # must be >= 18
 npm test
 ```
 
-All changes must pass `npm test` (216 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
+All changes must pass `npm test` (231 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
 
 ## License
 
