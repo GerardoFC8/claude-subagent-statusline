@@ -37,6 +37,14 @@ function main() {
     const type = typeof t.type === 'string' ? t.type : typeof t.name === 'string' ? t.name : '';
     const desc = typeof t.description === 'string' ? t.description : '';
 
+    // Effort level, rendered as `(high)` right after the model so these rows match
+    // the main statusline, which has shown the active effort since v0.9.0. The
+    // per-task payload sends a bare string; the `{ level }` object shape is accepted
+    // too because that is how the main statusline payload carries it.
+    const effortRaw = t.effort && typeof t.effort === 'object' ? t.effort.level : t.effort;
+    const effort =
+      typeof effortRaw === 'string' && effortRaw.trim() ? ` (${effortRaw.trim()})` : '';
+
     let ctx = '';
     if (
       typeof t.tokenCount === 'number' &&
@@ -49,13 +57,16 @@ function main() {
     // Budget the description against the visible (ANSI-free) width so the row
     // never overflows the terminal. `⋯` is the zero-model fallback width.
     const modelPlain = model || '⋯';
-    const fixed = modelPlain.length + (type ? SEP.length + type.length : 0) + ctx.length;
+    const fixed =
+      modelPlain.length + effort.length + (type ? SEP.length + type.length : 0) + ctx.length;
     const descBudget = columns - fixed - SEP.length - 2;
     let descOut = desc;
     if (descBudget <= 1) descOut = '';
     else if (desc.length > descBudget) descOut = desc.slice(0, descBudget - 1) + '…';
 
-    const modelSeg = model ? `${BOLD}${CYAN}${model}${RESET}` : `${DIM}⋯${RESET}`;
+    const modelSeg = model
+      ? `${BOLD}${CYAN}${model}${RESET}${effort ? `${DIM}${effort}${RESET}` : ''}`
+      : `${DIM}⋯${effort}${RESET}`;
     const segs = [modelSeg];
     if (type) segs.push(`${DIM}${type}${RESET}`);
     if (descOut) segs.push(descOut);

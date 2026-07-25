@@ -41,11 +41,11 @@ my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m
 Además de la statusline agregada, el plugin puede renderizar **una fila por cada sub-agente en ejecución**, cada una encabezada por el **modelo resuelto** en el que corre ese sub-agente (`Opus 4.8`, `Haiku 4.5`, `Sonnet 5`, `Fable 5`…). Usa el segundo contrato de statusline de Claude Code, `subagentStatusLine`: Claude Code envía un único objeto JSON por stdin (`{ ...campos, columns, tasks[] }`) y el plugin imprime una línea `{"id","content"}` por fila.
 
 ```
-Opus 4.8 · explore · map the auth module 24%
+Opus 4.8 (xhigh) · explore · map the auth module 24%
 Haiku 4.5 · writer · draft the changelog entry
 ```
 
-Cada fila combina: el **modelo** (en negrita y cian; si Claude Code no expone el modelo del task, cae al placeholder `⋯`), el **tipo/nombre** del sub-agente (atenuado), la **descripción** (truncada con `…` para que la fila se mantenga dentro del ancho `columns` de la terminal cuando hay espacio) y, si el payload lo trae, el **porcentaje de contexto** del sub-agente (`tokenCount / contextWindowSize`).
+Cada fila combina: el **modelo** (en negrita y cian; si Claude Code no expone el modelo del task, cae al placeholder `⋯`), el **effort** de ese sub-agente entre paréntesis (misma escala que el bracket principal: `low`, `medium`, `high`, `xhigh`, `max`; se omite si el payload no lo trae), el **tipo/nombre** del sub-agente (atenuado), la **descripción** (truncada con `…` para que la fila se mantenga dentro del ancho `columns` de la terminal cuando hay espacio) y, si el payload lo trae, el **porcentaje de contexto** del sub-agente (`tokenCount / contextWindowSize`).
 
 El renderizador vive en `scripts/subagent-statusline.js` y se registra automáticamente bajo la clave `subagentStatusLine` de `~/.claude/settings.json`, de forma aditiva: **no toca ni modifica tu `statusLine` existente**. Si ya tenés un `subagentStatusLine` propio, el plugin lo respeta y no lo sobrescribe.
 
@@ -172,7 +172,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (193 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (197 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 

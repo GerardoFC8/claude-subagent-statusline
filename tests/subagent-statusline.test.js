@@ -99,6 +99,76 @@ test('subagent-statusline: non-Claude model ids fall back to ⋯ instead of a gu
   }
 });
 
+// ---------------------------------------------------------------------------
+// effort level (parity with the main statusline, which has shown it since v0.9.0)
+// ---------------------------------------------------------------------------
+
+test('subagent-statusline: renders the effort level after the model', () => {
+  const payload = {
+    columns: 200,
+    tasks: [
+      { id: 'a', model: 'claude-opus-4-8', effort: 'xhigh', type: 'sdd-apply' },
+      { id: 'b', model: 'claude-haiku-4-5', effort: 'low', type: 'sdd-archive' },
+    ],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  assert.strictEqual(r.status, 0);
+  const out = rows(r.stdout);
+  assert.ok(plain(out[0].content).startsWith('Opus 4.8 (xhigh) · sdd-apply'), plain(out[0].content));
+  assert.ok(plain(out[1].content).startsWith('Haiku 4.5 (low) · sdd-archive'), plain(out[1].content));
+});
+
+test('subagent-statusline: accepts the object effort shape used by the main payload', () => {
+  const payload = {
+    columns: 200,
+    tasks: [{ id: 'a', model: 'claude-sonnet-5', effort: { level: 'high' } }],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  assert.strictEqual(plain(rows(r.stdout)[0].content), 'Sonnet 5 (high)');
+});
+
+test('subagent-statusline: omits effort when absent or unusable', () => {
+  const payload = {
+    columns: 200,
+    tasks: [
+      { id: 'a', model: 'claude-sonnet-5' }, // absent
+      { id: 'b', model: 'claude-sonnet-5', effort: '' }, // empty
+      { id: 'c', model: 'claude-sonnet-5', effort: 42 }, // non-string
+      { id: 'd', model: 'claude-sonnet-5', effort: {} }, // object without level
+    ],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  const out = rows(r.stdout);
+  assert.strictEqual(out.length, 4);
+  for (const row of out) {
+    assert.strictEqual(plain(row.content), 'Sonnet 5', `unexpected effort: ${plain(row.content)}`);
+  }
+});
+
+test('subagent-statusline: effort counts against the description budget', () => {
+  // The effort suffix must be part of the fixed width, or a long description
+  // would push the row past `columns`.
+  const columns = 60;
+  const payload = {
+    columns,
+    tasks: [
+      {
+        id: 'a',
+        model: 'claude-opus-4-8',
+        effort: 'xhigh',
+        type: 'general-purpose',
+        description: 'z'.repeat(300),
+        tokenCount: 50000,
+        contextWindowSize: 200000,
+      },
+    ],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  const visible = plain(rows(r.stdout)[0].content);
+  assert.ok(visible.includes('(xhigh)'), visible);
+  assert.ok(visible.length <= columns, `row of ${visible.length} exceeds columns=${columns}: ${visible}`);
+});
+
 test('subagent-statusline: unresolved/empty model falls back to ⋯', () => {
   const payload = {
     columns: 80,

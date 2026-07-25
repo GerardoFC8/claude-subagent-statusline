@@ -41,11 +41,11 @@ my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m
 On top of the aggregate statusline, the plugin can render **one row per running sub-agent**, each leading with the **resolved model** that sub-agent runs on (`Opus 4.8`, `Haiku 4.5`, `Sonnet 5`, `Fable 5`…). It uses Claude Code's second statusline contract, `subagentStatusLine`: Claude Code pipes a single JSON object on stdin (`{ ...baseFields, columns, tasks[] }`) and the plugin writes one `{"id","content"}` line per row.
 
 ```
-Opus 4.8 · explore · map the auth module 24%
+Opus 4.8 (xhigh) · explore · map the auth module 24%
 Haiku 4.5 · writer · draft the changelog entry
 ```
 
-Each row combines: the **model** (bold cyan; falls back to the `⋯` placeholder when Claude Code does not expose the task's model), the sub-agent **type/name** (dimmed), the **description** (truncated with `…` so the row stays within the terminal's `columns` width when there's room), and — when the payload provides it — the sub-agent's **context percentage** (`tokenCount / contextWindowSize`).
+Each row combines: the **model** (bold cyan; falls back to the `⋯` placeholder when Claude Code does not expose the task's model), that sub-agent's **effort** in parentheses (same scale as the main bracket: `low`, `medium`, `high`, `xhigh`, `max`; omitted when the payload does not carry it), the sub-agent **type/name** (dimmed), the **description** (truncated with `…` so the row stays within the terminal's `columns` width when there's room), and — when the payload provides it — the sub-agent's **context percentage** (`tokenCount / contextWindowSize`).
 
 The renderer lives at `scripts/subagent-statusline.js` and is registered automatically under the `subagentStatusLine` key of `~/.claude/settings.json`, additively: it **never touches or changes your existing `statusLine`**. If you already have your own `subagentStatusLine`, the plugin leaves it intact and does not overwrite it.
 
@@ -172,7 +172,7 @@ node --version   # must be >= 18
 npm test
 ```
 
-All changes must pass `npm test` (193 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
+All changes must pass `npm test` (197 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
 
 ## License
 
