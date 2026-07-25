@@ -8,6 +8,9 @@ const lib = require('./lib/history');
 // Shared with scripts/subagent-statusline.js. Returns null for unrecognised ids,
 // which keeps the `display_name` fallback below in charge of those cases.
 const { parseModelFromId } = require('./lib/model');
+// Shared with scripts/subagent-statusline.js so the session clock and the
+// per-subagent clock format identically.
+const { formatDuration } = require('./lib/duration');
 
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
@@ -148,17 +151,8 @@ function main() {
   const nowSec = lib.nowEpochSeconds();
   let elapsedSeg = '';
   if (baselineSec !== null) {
-    let secs = Math.floor(nowSec - baselineSec);
-    if (secs < 0) secs = 0;
-    let fmt;
-    if (secs < 60) {
-      fmt = `${secs}s`;
-    } else if (secs < 3600) {
-      fmt = `${Math.floor(secs / 60)}m ${secs % 60}s`;
-    } else {
-      fmt = `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
-    }
-    elapsedSeg = ` │ ⏱ ${fmt}`;
+    const fmt = formatDuration(nowSec - baselineSec);
+    if (fmt !== null) elapsedSeg = ` │ ⏱ ${fmt}`;
   }
 
   const failedSeg = ` · ✗ ${counters.failed}`;
