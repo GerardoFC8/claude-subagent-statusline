@@ -188,12 +188,79 @@ test('history: atomicWrite writes content to file via rename', () => {
 });
 
 // ---------------------------------------------------------------------------
+// sessionEffortPath / readSessionEffort — session effort handoff to sub-agent rows
+// ---------------------------------------------------------------------------
+test('history: sessionEffortPath("S1") returns correct path', () => {
+  const lib = require('../scripts/lib/history');
+  const expected = path.join(os.homedir(), '.claude', 'state', 'session-effort-S1.json');
+  assert.strictEqual(lib.sessionEffortPath('S1'), expected);
+});
+
+// Run fn with HOME/USERPROFILE pointed at an isolated temp home.
+function withHome(fn) {
+  const home = mkTmpHome();
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    return fn(home);
+  } finally {
+    for (const k of Object.keys(saved)) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+    cleanupTmpHome(home);
+  }
+}
+
+test('history: readSessionEffort returns the parsed record', () => {
+  const lib = require('../scripts/lib/history');
+  withHome((home) => {
+    const file = path.join(home, '.claude', 'state', 'session-effort-S1.json');
+    fs.writeFileSync(file, JSON.stringify({ effort: 'high', version: '2.1.285' }));
+    assert.deepStrictEqual(lib.readSessionEffort('S1'), { effort: 'high', version: '2.1.285' });
+  });
+});
+
+test('history: readSessionEffort returns null for missing, corrupt, or non-object files', () => {
+  const lib = require('../scripts/lib/history');
+  withHome((home) => {
+    const file = path.join(home, '.claude', 'state', 'session-effort-S1.json');
+    assert.strictEqual(lib.readSessionEffort('S1'), null);
+    assert.strictEqual(lib.readSessionEffort(''), null);
+    fs.writeFileSync(file, '{ nope');
+    assert.strictEqual(lib.readSessionEffort('S1'), null);
+    fs.writeFileSync(file, '[1]');
+    assert.strictEqual(lib.readSessionEffort('S1'), null);
+    fs.writeFileSync(file, 'null');
+    assert.strictEqual(lib.readSessionEffort('S1'), null);
+  });
+});
+
+test('history: writeSessionEffort writes only when the content changes', () => {
+  const lib = require('../scripts/lib/history');
+  withHome((home) => {
+    const file = path.join(home, '.claude', 'state', 'session-effort-S1.json');
+    assert.strictEqual(lib.writeSessionEffort('S1', 'high', '2.1.285'), true);
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { effort: 'high', version: '2.1.285' });
+    const past = new Date(Date.now() - 60000);
+    fs.utimesSync(file, past, past);
+    assert.strictEqual(lib.writeSessionEffort('S1', 'high', '2.1.285'), false);
+    assert.strictEqual(fs.statSync(file).mtimeMs, past.getTime());
+    assert.strictEqual(lib.writeSessionEffort('S1', null, '2.1.285'), true);
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { effort: null, version: '2.1.285' });
+    assert.strictEqual(lib.writeSessionEffort('', 'high', '2.1.285'), false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // module.exports check — all expected functions exported (slice 1 + slice 2)
 // ---------------------------------------------------------------------------
 test('history: module exports all required functions', () => {
   const lib = require('../scripts/lib/history');
   const required = [
-    'historyPath', 'counterPath', 'sessionStartPath',
+    'historyPath', 'counterPath', 'sessionStartPath', 'sessionEffortPath',
+    'readSessionEffort', 'writeSessionEffort',
     'readCounters', 'atomicWrite',
     'nowEpochSeconds', 'isoToEpochSeconds',
     // slice 2 write-side

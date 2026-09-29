@@ -46,7 +46,15 @@ Opus 5 · Audit the changelog entries █████░░░░░░░░░
 Haiku 4.5 · Map the auth module █████████████░░░ 168k/200k · 8m 24s
 ```
 
-Cada fila combina: el **modelo** (en negrita y cian; si Claude Code no expone el modelo del task, cae al placeholder `⋯`), el **effort** de ese sub-agente entre paréntesis (se omite si el payload no lo trae, que es lo habitual), el **tipo** del sub-agente cuando aporta información, la **descripción** y una cola de métricas en vivo: la **barra de contexto**, el **contexto usado sobre la ventana** y el **tiempo transcurrido**.
+Cada fila combina: el **modelo** (en negrita y cian; si Claude Code no expone el modelo del task, cae al placeholder `⋯`), el **effort** de ese sub-agente entre paréntesis (ver más abajo), el **tipo** del sub-agente cuando aporta información, la **descripción** y una cola de métricas en vivo: la **barra de contexto**, el **contexto usado sobre la ventana** y el **tiempo transcurrido**.
+
+**Effort** (`(high)`, `(32k)`, `(~medium)`) — se muestra entre paréntesis después del modelo y admite tres formas:
+
+- `(high)` — el sub-agente tiene un effort explícito, definido en el frontmatter del agente o al invocarlo (`low`, `medium`, `high`, `xhigh` o `max`).
+- `(32k)` — el effort explícito es un presupuesto numérico de tokens; se abrevia con el mismo formato que la cifra de contexto.
+- `(~medium)` — el sub-agente no define effort propio y **hereda el de la sesión**. El `~` indica justamente eso: el valor no viene del payload del sub-agente, sino del effort de la sesión que registra la statusline principal en `~/.claude/state/session-effort-<session_id>.json`.
+
+El effort heredado solo se muestra si ese archivo fue escrito por **Claude Code 2.1.214 o superior**. En versiones anteriores el campo `effort` por task nunca llega, así que su ausencia no significa "hereda de la sesión" y el marcador podría etiquetar mal a un agente que en realidad corre, por ejemplo, en `xhigh`; en esos casos, o si el archivo falta o está dañado, el effort se omite (sin paréntesis vacíos). Después de un `/effort`, las filas de sub-agentes reflejan el cambio en el siguiente refresco de la statusline principal: hay un desfase de un tick.
 
 **Barra de contexto** (`█████░░░░░░░░░░░`) — 16 celdas de ancho fijo que representan la porción de la ventana de contexto que ese sub-agente ya consumió. Es una escala absoluta: dos filas con la misma barra consumieron la misma proporción de su ventana, aunque sus ventanas tengan tamaños distintos. El ancho no cambia entre ticks, así que la fila no salta, y cada tick avanza como máximo una celda. Cualquier consumo distinto de cero llena al menos una celda, para que un sub-agente activo sobre una ventana de 1M no se vea igual que uno que no consumió nada. Si el uso supera la ventana, la barra se satura en 16 celdas y la cifra sigue mostrando el exceso real (`500k/200k`).
 
@@ -185,7 +193,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (231 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (280 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 

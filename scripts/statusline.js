@@ -84,7 +84,9 @@ function main() {
   let parsed = null;
   try { parsed = JSON.parse(payload); } catch (_) { parsed = null; }
 
-  const sessionId = parsed && parsed.session_id ? String(parsed.session_id) : '';
+  // Unsafe ids (path separators, dot segments) are treated as absent: no state
+  // file is read or written, and the line still renders.
+  const sessionId = (parsed && lib.safeSessionId(parsed.session_id)) || '';
 
   // Model name: prefer parsing the structured `model.id` (claude-opus-4-7 → "Opus 4.7").
   // Fall back to `display_name` with the trailing "(...context...)" annotation stripped.
@@ -128,6 +130,18 @@ function main() {
       if (!fs.existsSync(sessionStartFile)) {
         lib.atomicWrite(sessionStartFile, String(lib.nowEpochSeconds()));
       }
+    } catch (_) { /* swallow */ }
+  }
+
+  // Hand the session effort to scripts/subagent-statusline.js, whose payload has
+  // no session effort of its own. Sub-agents that inherit the session effort get
+  // no per-task `effort`, so their rows read it from here. The Claude Code version
+  // is recorded alongside so the reader can tell whether a missing per-task value
+  // really means "inherited". Isolated so a failure can never touch this line.
+  if (sessionId) {
+    try {
+      const version = parsed && typeof parsed.version === 'string' ? parsed.version : null;
+      lib.writeSessionEffort(sessionId, typeof effortRaw === 'string' ? effortRaw : null, version);
     } catch (_) { /* swallow */ }
   }
 

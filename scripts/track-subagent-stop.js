@@ -20,7 +20,8 @@ try {
   try { p = JSON.parse(payload); } catch (_) { process.exit(0); }
   if (!p || typeof p !== 'object') process.exit(0);
 
-  const sessionId = typeof p.session_id === 'string' ? p.session_id : '';
+  // Unsafe ids (path separators, dot segments) are skipped: no file is touched.
+  const sessionId = lib.safeSessionId(p.session_id) || '';
   const agentId   = typeof p.agent_id   === 'string' ? p.agent_id   : '';
   if (!sessionId || !agentId) process.exit(0);
 

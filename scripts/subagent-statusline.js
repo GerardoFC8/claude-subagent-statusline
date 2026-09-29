@@ -17,6 +17,15 @@ const { formatDuration } = require('./lib/duration');
 // Rendered-column measurement. String.length is the wrong ruler here: a CJK
 // description under-reports and an emoji must not be cut mid-surrogate.
 const { visibleWidth, truncateToWidth } = require('./lib/width');
+// The session effort is persisted by scripts/statusline.js; this payload has none.
+const { readSessionEffort } = require('./lib/history');
+const { versionAtLeast } = require('./lib/version');
+
+// First Claude Code release that sends a per-task `effort` for explicit values.
+// Before it the field is always absent, so absence cannot be read as "inherits
+// the session effort" — an agent pinned to xhigh would be labelled with the
+// session's level instead.
+const MIN_VERSION_PER_TASK_EFFORT = '2.1.214';
 
 // Task types Claude Code uses internally rather than to describe the agent. They
 // are identical across every foreground sub-agent, so rendering them costs width
@@ -74,6 +83,27 @@ function main() {
   const SEP = ' · ';
   const out = [];
 
+  // The session effort, read at most once per invocation and only when a task
+  // actually needs it. Shown only when the recording Claude Code is new enough
+  // for an absent per-task effort to mean "inherited".
+  let sessionEffort;
+  const inheritedEffort = () => {
+    if (sessionEffort === undefined) {
+      sessionEffort = null;
+      const sid = typeof data.session_id === 'string' ? data.session_id : '';
+      const rec = sid ? readSessionEffort(sid) : null;
+      if (
+        rec &&
+        typeof rec.effort === 'string' &&
+        rec.effort.trim() &&
+        versionAtLeast(rec.version, MIN_VERSION_PER_TASK_EFFORT)
+      ) {
+        sessionEffort = rec.effort.trim();
+      }
+    }
+    return sessionEffort;
+  };
+
   for (const t of data.tasks) {
     if (!t || typeof t.id !== 'string') continue;
 
@@ -82,13 +112,23 @@ function main() {
     const type = INTERNAL_TASK_TYPES.has(typeRaw) ? '' : typeRaw;
     const desc = typeof t.description === 'string' ? t.description : '';
 
-    // Effort level, rendered as `(high)` right after the model so these rows match
-    // the main statusline, which has shown the active effort since v0.9.0. The
-    // per-task payload sends a bare string; the `{ level }` object shape is accepted
-    // too because that is how the main statusline payload carries it.
+    // Effort, rendered right after the model so these rows match the main
+    // statusline, which has shown the active effort since v0.9.0. The per-task
+    // payload sends a bare value; the `{ level }` object shape is accepted too
+    // because that is how the main statusline payload carries it. A level string
+    // renders as `(high)`, a numeric token budget as `(32k)`. Only a genuinely
+    // absent field falls back to the session effort, marked `(~medium)`; an
+    // explicit but unusable value renders nothing.
     const effortRaw = t.effort && typeof t.effort === 'object' ? t.effort.level : t.effort;
-    const effort =
-      typeof effortRaw === 'string' && effortRaw.trim() ? ` (${effortRaw.trim()})` : '';
+    let effort = '';
+    if (typeof effortRaw === 'string' && effortRaw.trim()) {
+      effort = ` (${effortRaw.trim()})`;
+    } else if (typeof effortRaw === 'number' && Number.isFinite(effortRaw) && effortRaw > 0) {
+      effort = ` (${formatTokens(effortRaw)})`;
+    } else if (t.effort === undefined || t.effort === null) {
+      const inherited = inheritedEffort();
+      if (inherited) effort = ` (~${inherited})`;
+    }
 
     // Context usage: a fixed-width fill bar plus the absolute figure. Both need
     // tokenCount and contextWindowSize, so they appear and disappear together.

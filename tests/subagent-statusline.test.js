@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { REPO_ROOT, runScript } = require('./_helpers');
+const { REPO_ROOT, runScript, mkTmpHome, cleanupTmpHome, sessionEffortFile } = require('./_helpers');
 const { visibleWidth } = require('../scripts/lib/width');
 
 const SCRIPT = path.join(REPO_ROOT, 'scripts', 'subagent-statusline.js');
@@ -231,13 +231,15 @@ test('subagent-statusline: omits effort when absent or unusable', () => {
     tasks: [
       { id: 'a', model: 'claude-sonnet-5' }, // absent
       { id: 'b', model: 'claude-sonnet-5', effort: '' }, // empty
-      { id: 'c', model: 'claude-sonnet-5', effort: 42 }, // non-string
+      { id: 'c', model: 'claude-sonnet-5', effort: -1 }, // negative budget
       { id: 'd', model: 'claude-sonnet-5', effort: {} }, // object without level
+      { id: 'e', model: 'claude-sonnet-5', effort: 0 }, // zero budget is meaningless
+      { id: 'f', model: 'claude-sonnet-5', effort: true }, // wrong type
     ],
   };
   const r = runScript(SCRIPT, JSON.stringify(payload));
   const out = rows(r.stdout);
-  assert.strictEqual(out.length, 4);
+  assert.strictEqual(out.length, 6);
   for (const row of out) {
     assert.strictEqual(plain(row.content), 'Sonnet 5', `unexpected effort: ${plain(row.content)}`);
   }
@@ -265,6 +267,161 @@ test('subagent-statusline: effort counts against the description budget', () => 
   const visible = plain(rows(r.stdout)[0].content);
   assert.ok(visible.includes('(xhigh)'), visible);
   assert.ok(visible.length <= columns, `row of ${visible.length} exceeds columns=${columns}: ${visible}`);
+});
+
+// ---------------------------------------------------------------------------
+// numeric effort (token budget) and effort inherited from the session
+// ---------------------------------------------------------------------------
+
+test('subagent-statusline: renders a numeric effort as a compact token budget', () => {
+  const payload = {
+    columns: 200,
+    tasks: [
+      { id: 'a', model: 'claude-opus-4-8', effort: 32000 },
+      { id: 'b', model: 'claude-opus-4-8', effort: 42 },
+      { id: 'c', model: 'claude-opus-4-8', effort: 1500000 },
+      { id: 'd', model: 'claude-opus-4-8', effort: { level: 16000 } },
+    ],
+  };
+  const r = runScript(SCRIPT, JSON.stringify(payload));
+  assert.strictEqual(r.status, 0);
+  const out = rows(r.stdout).map((x) => plain(x.content));
+  assert.deepStrictEqual(out, [
+    'Opus 4.8 (32k)',
+    'Opus 4.8 (42)',
+    'Opus 4.8 (1.5M)',
+    'Opus 4.8 (16k)',
+  ]);
+});
+
+// Run the renderer with an isolated HOME holding (or not holding) a session
+// effort file. `fileContent` is written verbatim when it is a string, as JSON
+// otherwise, and skipped when undefined.
+function runWithSessionEffort(tasks, fileContent, opts) {
+  const home = mkTmpHome();
+  const sid = (opts && opts.sid) || 'SESS_EFFORT';
+  try {
+    if (fileContent !== undefined) {
+      fs.writeFileSync(
+        sessionEffortFile(home, sid),
+        typeof fileContent === 'string' ? fileContent : JSON.stringify(fileContent),
+      );
+    }
+    const payload = { session_id: sid, columns: (opts && opts.columns) || 200, tasks };
+    if (opts && opts.noSessionId) delete payload.session_id;
+    const r = runScript(SCRIPT, JSON.stringify(payload), { HOME: home, USERPROFILE: home });
+    assert.strictEqual(r.status, 0);
+    return rows(r.stdout).map((x) => plain(x.content));
+  } finally {
+    cleanupTmpHome(home);
+  }
+}
+
+test('subagent-statusline: absent effort inherits the session effort as (~level)', () => {
+  const out = runWithSessionEffort(
+    [{ id: 'a', model: 'claude-sonnet-5' }],
+    { effort: 'medium', version: '2.1.285' },
+  );
+  assert.deepStrictEqual(out, ['Sonnet 5 (~medium)']);
+});
+
+test('subagent-statusline: inherited effort is shown at exactly the gate version', () => {
+  const out = runWithSessionEffort(
+    [{ id: 'a', model: 'claude-sonnet-5' }],
+    { effort: 'high', version: '2.1.214' },
+  );
+  assert.deepStrictEqual(out, ['Sonnet 5 (~high)']);
+});
+
+test('subagent-statusline: explicit per-task effort wins over the session file', () => {
+  const out = runWithSessionEffort(
+    [
+      { id: 'a', model: 'claude-sonnet-5', effort: 'low' },
+      { id: 'b', model: 'claude-sonnet-5', effort: 8000 },
+      { id: 'c', model: 'claude-sonnet-5' },
+    ],
+    { effort: 'max', version: '2.1.285' },
+  );
+  assert.deepStrictEqual(out, ['Sonnet 5 (low)', 'Sonnet 5 (8k)', 'Sonnet 5 (~max)']);
+});
+
+test('subagent-statusline: an explicit but unusable effort does not fall back to the session', () => {
+  // Only a genuinely absent field means "inherits the session effort".
+  const out = runWithSessionEffort(
+    [
+      { id: 'a', model: 'claude-sonnet-5', effort: '' },
+      { id: 'b', model: 'claude-sonnet-5', effort: {} },
+    ],
+    { effort: 'max', version: '2.1.285' },
+  );
+  assert.deepStrictEqual(out, ['Sonnet 5', 'Sonnet 5']);
+});
+
+test('subagent-statusline: inherited effort is hidden on Claude Code older than 2.1.214', () => {
+  // 2.1.99 would pass a lexical string comparison against 2.1.214; the gate
+  // must compare numerically.
+  for (const version of ['2.1.213', '2.1.99', '2.0.500', '1.9.999']) {
+    const out = runWithSessionEffort(
+      [{ id: 'a', model: 'claude-sonnet-5' }],
+      { effort: 'medium', version },
+    );
+    assert.deepStrictEqual(out, ['Sonnet 5'], `version ${version} must not show inherited effort`);
+  }
+});
+
+test('subagent-statusline: inherited effort is hidden when the version is missing or unparseable', () => {
+  for (const version of [null, undefined, '', 'garbage', 42, '2.1']) {
+    const out = runWithSessionEffort(
+      [{ id: 'a', model: 'claude-sonnet-5' }],
+      { effort: 'medium', version },
+    );
+    assert.deepStrictEqual(out, ['Sonnet 5'], `version ${JSON.stringify(version)} must not show`);
+  }
+});
+
+test('subagent-statusline: no inherited effort when the session effort is null', () => {
+  const out = runWithSessionEffort(
+    [{ id: 'a', model: 'claude-sonnet-5' }],
+    { effort: null, version: '2.1.285' },
+  );
+  assert.deepStrictEqual(out, ['Sonnet 5']);
+});
+
+test('subagent-statusline: missing or corrupt session effort file is ignored silently', () => {
+  const task = [{ id: 'a', model: 'claude-sonnet-5' }];
+  assert.deepStrictEqual(runWithSessionEffort(task, undefined), ['Sonnet 5']);
+  assert.deepStrictEqual(runWithSessionEffort(task, '{ not json'), ['Sonnet 5']);
+  assert.deepStrictEqual(runWithSessionEffort(task, '[1,2]'), ['Sonnet 5']);
+  assert.deepStrictEqual(runWithSessionEffort(task, 'null'), ['Sonnet 5']);
+});
+
+test('subagent-statusline: no session_id means no inherited effort', () => {
+  const out = runWithSessionEffort(
+    [{ id: 'a', model: 'claude-sonnet-5' }],
+    { effort: 'medium', version: '2.1.285' },
+    { noSessionId: true },
+  );
+  assert.deepStrictEqual(out, ['Sonnet 5']);
+});
+
+test('subagent-statusline: inherited effort counts against the description budget', () => {
+  const columns = 60;
+  const out = runWithSessionEffort(
+    [
+      {
+        id: 'a',
+        model: 'claude-opus-4-8',
+        type: 'general-purpose',
+        description: 'z'.repeat(300),
+        tokenCount: 50000,
+        contextWindowSize: 200000,
+      },
+    ],
+    { effort: 'xhigh', version: '2.1.285' },
+    { columns },
+  );
+  assert.ok(out[0].includes('(~xhigh)'), out[0]);
+  assert.ok(visibleWidth(out[0]) <= columns, `row of ${visibleWidth(out[0])} exceeds columns=${columns}: ${out[0]}`);
 });
 
 test('subagent-statusline: unresolved/empty model falls back to ⋯', () => {

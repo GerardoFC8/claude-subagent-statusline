@@ -23,18 +23,42 @@ function isoToEpochSeconds(iso) {
   return Math.floor(ms / 1000);
 }
 
-// Per-session counter file path. Mirrors bash:
-//   ${HOME}/.claude/state/delegations-${session_id}.jsonl
-function counterPath(sessionId) {
-  return path.join(os.homedir(), '.claude', 'state',
-    `delegations-${sessionId}.jsonl`);
+// A session_id is interpolated into per-session file names, so it must not be
+// able to carry a path separator or a dot segment ("../x", "a/b", "..").
+// Returns the id when it is safe to use as a file-name fragment, else null.
+// Real Claude Code session ids are UUIDs and always pass.
+const SAFE_SESSION_ID = /^[A-Za-z0-9._-]+$/;
+function safeSessionId(id) {
+  if (typeof id !== 'string' || !SAFE_SESSION_ID.test(id)) return null;
+  if (id === '.' || id === '..') return null;
+  return id;
 }
 
-// Per-session start timestamp file path. Mirrors bash:
+// Per-session state file path, or null when the session id is unsafe.
+function statePath(sessionId, prefix, suffix) {
+  const id = safeSessionId(sessionId);
+  if (id === null) return null;
+  return path.join(os.homedir(), '.claude', 'state', `${prefix}${id}${suffix}`);
+}
+
+// Per-session counter file path (null for an unsafe id). Mirrors bash:
+//   ${HOME}/.claude/state/delegations-${session_id}.jsonl
+function counterPath(sessionId) {
+  return statePath(sessionId, 'delegations-', '.jsonl');
+}
+
+// Per-session start timestamp file path (null for an unsafe id). Mirrors bash:
 //   ${HOME}/.claude/state/session-start-${session_id}
 function sessionStartPath(sessionId) {
-  return path.join(os.homedir(), '.claude', 'state',
-    `session-start-${sessionId}`);
+  return statePath(sessionId, 'session-start-', '');
+}
+
+// Per-session effort handoff file path (null for an unsafe id):
+//   ${HOME}/.claude/state/session-effort-${session_id}.json
+// Written by scripts/statusline.js (the only payload that carries the session
+// effort) and read by scripts/subagent-statusline.js, whose payload does not.
+function sessionEffortPath(sessionId) {
+  return statePath(sessionId, 'session-effort-', '.json');
 }
 
 // History file path — three-tier resolution, identical to history-lib.sh:
@@ -74,8 +98,8 @@ function atomicWrite(filePath, contents) {
 // Mirrors statusline.sh jq queries. Returns { running, done, failed, oldestStarted }.
 function readCounters(sessionId) {
   const empty = { running: 0, done: 0, failed: 0, oldestStarted: null };
-  if (!sessionId) return empty;
   const file = counterPath(sessionId);
+  if (!file) return empty;
   let data;
   try { data = fs.readFileSync(file, 'utf8'); } catch (_) { return empty; }
   const doneIds = new Set();
@@ -113,8 +137,8 @@ function readCounters(sessionId) {
 // completion to the original Agent delegation. Returns the most recent
 // match (last-write-wins) or null if not found / unreadable.
 function findToolUseIdByAgentId(sessionId, agentId) {
-  if (!sessionId || !agentId) return null;
   const file = counterPath(sessionId);
+  if (!file || !agentId) return null;
   let data;
   try { data = fs.readFileSync(file, 'utf8'); } catch (_) { return null; }
   let foundId = null;
@@ -130,6 +154,20 @@ function findToolUseIdByAgentId(sessionId, agentId) {
   return foundId;
 }
 
+// Read the session effort record written by writeSessionEffort. Returns the
+// parsed object, or null when the file is missing, unreadable, corrupt, or not a
+// JSON object. Never throws.
+function readSessionEffort(sessionId) {
+  const file = sessionEffortPath(sessionId);
+  if (!file) return null;
+  let obj;
+  try {
+    obj = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (_) { return null; }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  return obj;
+}
+
 // ---------------------------------------------------------------------------
 // SLICE 2 — Write-side helpers
 // ---------------------------------------------------------------------------
@@ -137,8 +175,8 @@ function findToolUseIdByAgentId(sessionId, agentId) {
 // Append a single JSONL line to the per-session counter file.
 // Best-effort: never throws to caller. mkdir -p for parent.
 function counterAppend(sessionId, obj) {
-  if (!sessionId) return;
   const file = counterPath(sessionId);
+  if (!file) return;
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, JSON.stringify(obj) + '\n');
@@ -154,6 +192,25 @@ function historyAppend(obj) {
     fs.appendFileSync(file, JSON.stringify(obj) + '\n');
   } catch (_) { return; }
   historyTrimIfNeeded();
+}
+
+// Persist the session's effort level and the Claude Code version that reported
+// it. The statusline runs on every tick, so the file is rewritten only when its
+// content would change. A missing level is stored as null so a stale value is
+// cleared rather than left behind. Returns true when a write was attempted.
+// Best-effort: never throws.
+function writeSessionEffort(sessionId, effort, version) {
+  const file = sessionEffortPath(sessionId);
+  if (!file) return false;
+  const record = JSON.stringify({
+    effort: typeof effort === 'string' && effort !== '' ? effort : null,
+    version: typeof version === 'string' && version !== '' ? version : null,
+  });
+  try {
+    if (fs.readFileSync(file, 'utf8') === record) return false;
+  } catch (_) { /* missing or unreadable: write below */ }
+  atomicWrite(file, record);
+  return true;
 }
 
 // Ring buffer: when line count exceeds threshold, keep last KEEP via tmp + rename.
@@ -177,18 +234,22 @@ function historyTrimIfNeeded() {
 
 module.exports = {
   // Path helpers
+  safeSessionId,
   historyPath,
   counterPath,
   sessionStartPath,
+  sessionEffortPath,
   // Atomic write
   atomicWrite,
   // Read helpers
   readCounters,
   findToolUseIdByAgentId,
+  readSessionEffort,
   // Write helpers (slice 2)
   counterAppend,
   historyAppend,
   historyTrimIfNeeded,
+  writeSessionEffort,
   // Time
   nowIsoZ,
   nowEpochSeconds,

@@ -7,6 +7,43 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.14.0] — 2026-09-29
+
+Per-subagent rows now show the effort a sub-agent actually runs at in the common case: when it inherits the session effort. Claude Code omits the per-task `effort` field for those sub-agents, and the `subagentStatusLine` payload carries no session effort of its own, so the main statusline now hands it over through a per-session state file.
+
+### Added
+
+- **Inherited effort on per-subagent rows (`(~medium)`)** — when a task has no `effort` field, the row falls back to the session effort, marked with `~` to show it was inherited rather than set on the sub-agent. `scripts/statusline.js` persists the session's `effort.level` and the Claude Code `version` to `~/.claude/state/session-effort-<session_id>.json` (atomic tmp + rename, rewritten only when the content changes, `effort: null` when the level is absent so a stale value is cleared). `scripts/subagent-statusline.js` reads it at most once per invocation, keyed by the payload's `session_id`. A missing, unreadable, or corrupt file omits the suffix silently.
+- **Version gate (`>= 2.1.214`)** — the inherited value is shown only when the recorded Claude Code version is `2.1.214` or newer, compared numerically (`scripts/lib/version.js`). Earlier releases never send a per-task `effort`, so an absent field there does not mean "inherited" and the fallback would mislabel a sub-agent that really runs at, e.g., `xhigh`. A missing or unparseable version hides the fallback.
+- **`sessionEffortPath`, `readSessionEffort`, `writeSessionEffort`** in `scripts/lib/history.js`.
+
+### Changed
+
+- **Numeric effort (token budget) renders** — a per-task `effort` given as a number was silently dropped; it now renders with the context figure's formatter, e.g. `(32k)`. Zero, negative, and non-finite values are still omitted.
+- **Explicit string effort is unchanged** — `(high)` still wins over the session file. Only a genuinely absent field falls back; an explicit but unusable value (`""`, `{}`) renders nothing.
+- **The effort suffix, including `~`, counts against the `columns` budget** exactly as before.
+- **Correction to the `0.12.0` notes** — they described `effort` as "absent from the real per-task payload for ordinary delegations" as though the field were simply unpopulated. It is absent because those sub-agents inherit the session effort; Claude Code sends the field only for an effort set in agent frontmatter or on invocation.
+- **`README.md` / `README.en.md`** — the per-subagent rows section documents the three effort forms, the `~` marker, the version gate, and the one-tick lag. Test count bumped to 280.
+- **Version** bumped to `0.14.0` across `plugin.json`, `package.json`, and `marketplace.json`.
+
+### Security
+
+- **`session_id` can no longer escape the state directory** — per-session file names (`delegations-<id>.jsonl`, `session-start-<id>`, `session-effort-<id>.json`) were built from the raw `session_id` of the stdin payload, so an id such as `../../evil` wrote `~/.claude/state/evil.json` and `a/b` created a subdirectory. A new `safeSessionId` helper in `scripts/lib/history.js` accepts only a non-empty `[A-Za-z0-9._-]+` string that is not `.` or `..`; `counterPath`, `sessionStartPath`, and `sessionEffortPath` return `null` for anything else, and every reader and writer treats `null` as "skip this file". `statusline.js` still renders the main line with no state I/O; `subagent-statusline.js` omits the inherited effort; the four tracking hooks exit 0 without touching any file, including the global history. Claude Code session ids are UUIDs and are unaffected.
+
+### Known limitations
+
+- **One-tick lag after `/effort`** — the session effort reaches sub-agent rows through the main statusline, so after an `/effort` change the rows update on the next main statusline refresh rather than immediately.
+
+### Updating
+
+```
+claude plugin update claude-subagent-statusline@claude-subagent-statusline
+```
+
+Restart Claude Code to apply.
+
+---
+
 ## [0.13.0] — 2026-07-25
 
 Follow-up to `0.12.0`, driven by an adversarial probe of the renderer and an audit of the shipped docs against the shipped code. Both found real defects; the row now guarantees the width contract it always claimed.

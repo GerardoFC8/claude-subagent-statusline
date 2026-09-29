@@ -46,7 +46,15 @@ Opus 5 · Audit the changelog entries █████░░░░░░░░░
 Haiku 4.5 · Map the auth module █████████████░░░ 168k/200k · 8m 24s
 ```
 
-Each row combines: the **model** (bold cyan; falls back to the `⋯` placeholder when Claude Code does not expose the task's model), that sub-agent's **effort** in parentheses (omitted when the payload does not carry it, which is the usual case), the sub-agent **type** when it carries information, the **description**, and a tail of live metrics: the **context bar**, the **context used against the window**, and the **elapsed time**.
+Each row combines: the **model** (bold cyan; falls back to the `⋯` placeholder when Claude Code does not expose the task's model), that sub-agent's **effort** in parentheses (see below), the sub-agent **type** when it carries information, the **description**, and a tail of live metrics: the **context bar**, the **context used against the window**, and the **elapsed time**.
+
+**Effort** (`(high)`, `(32k)`, `(~medium)`) — shown in parentheses after the model, in one of three forms:
+
+- `(high)` — the sub-agent has an explicit effort, set in the agent's frontmatter or on invocation (`low`, `medium`, `high`, `xhigh`, or `max`).
+- `(32k)` — the explicit effort is a numeric token budget, abbreviated with the same format as the context figure.
+- `(~medium)` — the sub-agent sets no effort of its own and **inherits the session effort**. The `~` marks exactly that: the value does not come from the sub-agent's payload but from the session effort the main statusline records in `~/.claude/state/session-effort-<session_id>.json`.
+
+Inherited effort is shown only when that file was written by **Claude Code 2.1.214 or newer**. On older versions the per-task `effort` field never arrives, so its absence does not mean "inherits the session" and the marker could mislabel an agent that really runs at, say, `xhigh`; in that case, or when the file is missing or corrupt, the effort is omitted (no empty parentheses). After an `/effort` change, sub-agent rows pick it up on the next main statusline refresh: there is a one-tick lag.
 
 **Context bar** (`█████░░░░░░░░░░░`) — a fixed 16-cell bar showing the share of its context window that sub-agent has consumed. It is an absolute scale: two rows with the same bar have consumed the same proportion of their window, even when those windows differ in size. The width never changes between ticks, so the row does not jump, and a tick advances the bar by at most one cell. Any non-zero consumption fills at least one cell, so an active sub-agent on a 1M window never looks identical to one that has consumed nothing. If usage exceeds the window the bar saturates at 16 cells while the figure keeps telling the truth (`500k/200k`).
 
@@ -185,7 +193,7 @@ node --version   # must be >= 18
 npm test
 ```
 
-All changes must pass `npm test` (231 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
+All changes must pass `npm test` (280 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
 
 ## License
 

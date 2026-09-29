@@ -41,6 +41,10 @@ function sessionStartFile(home, sessionId) {
   return path.join(home, '.claude', 'state', `session-start-${sessionId}`);
 }
 
+function sessionEffortFile(home, sessionId) {
+  return path.join(home, '.claude', 'state', `session-effort-${sessionId}.json`);
+}
+
 module.exports = {
   REPO_ROOT,
   mkTmpHome,
@@ -49,4 +53,5 @@ module.exports = {
   readJsonl,
   counterFile,
   sessionStartFile,
+  sessionEffortFile,
 };

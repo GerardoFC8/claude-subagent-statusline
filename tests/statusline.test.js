@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { REPO_ROOT, mkTmpHome, cleanupTmpHome, runScript, counterFile, sessionStartFile } = require('./_helpers');
+const { REPO_ROOT, mkTmpHome, cleanupTmpHome, runScript, counterFile, sessionStartFile, sessionEffortFile } = require('./_helpers');
 
 const STATUSLINE_SCRIPT = path.join(REPO_ROOT, 'scripts', 'statusline.js');
 
@@ -954,6 +954,112 @@ test('statusline: rate-limit percentage colored by threshold (green/yellow/red)'
     // Must contain both green and red ANSI codes wrapping the rate-limit percentages.
     assert.ok(result.stdout.includes('\x1b[32m30%'), 'five_hour at 30% must be green');
     assert.ok(result.stdout.includes('\x1b[31m90%'), 'seven_day at 90% must be red');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// session effort persistence — read by scripts/subagent-statusline.js so rows of
+// sub-agents that inherit the session effort can show it as `(~level)`
+// ---------------------------------------------------------------------------
+test('statusline: persists the session effort and Claude Code version', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      session_id: 'EFF1', version: '2.1.285', effort: { level: 'xhigh' },
+      model: { display_name: 'M' }, context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[M (xhigh)]'), result.stdout);
+    const rec = JSON.parse(fs.readFileSync(sessionEffortFile(home, 'EFF1'), 'utf8'));
+    assert.deepStrictEqual(rec, { effort: 'xhigh', version: '2.1.285' });
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: does not rewrite the session effort file when unchanged', () => {
+  const home = mkTmpHome();
+  try {
+    const file = sessionEffortFile(home, 'EFF2');
+    fs.writeFileSync(file, JSON.stringify({ effort: 'high', version: '2.1.285' }));
+    const past = new Date(Date.now() - 60000);
+    fs.utimesSync(file, past, past);
+    const payload = JSON.stringify({
+      session_id: 'EFF2', version: '2.1.285', effort: { level: 'high' },
+      model: { display_name: 'M' }, context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.strictEqual(fs.statSync(file).mtimeMs, past.getTime(), 'file must not be rewritten');
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: rewrites the session effort file when the effort changes', () => {
+  const home = mkTmpHome();
+  try {
+    const file = sessionEffortFile(home, 'EFF3');
+    fs.writeFileSync(file, JSON.stringify({ effort: 'high', version: '2.1.285' }));
+    const payload = JSON.stringify({
+      session_id: 'EFF3', version: '2.1.285', effort: { level: 'low' },
+      model: { display_name: 'M' }, context_window: { used_percentage: 20 },
+    });
+    runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { effort: 'low', version: '2.1.285' });
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: absent effort clears a stale session effort to null', () => {
+  const home = mkTmpHome();
+  try {
+    const file = sessionEffortFile(home, 'EFF4');
+    fs.writeFileSync(file, JSON.stringify({ effort: 'high', version: '2.1.285' }));
+    const payload = JSON.stringify({
+      session_id: 'EFF4', model: { display_name: 'M' }, context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { effort: null, version: null });
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: no session_id writes no session effort file', () => {
+  const home = mkTmpHome();
+  try {
+    const payload = JSON.stringify({
+      version: '2.1.285', effort: { level: 'high' },
+      model: { display_name: 'M' }, context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    const stateDir = path.join(home, '.claude', 'state');
+    const effortFiles = fs.readdirSync(stateDir).filter((f) => f.startsWith('session-effort-'));
+    assert.deepStrictEqual(effortFiles, []);
+  } finally {
+    cleanupTmpHome(home);
+  }
+});
+
+test('statusline: an unwritable state dir does not affect the main line', () => {
+  const home = mkTmpHome();
+  try {
+    // A directory where the effort file should be makes the write fail.
+    fs.mkdirSync(sessionEffortFile(home, 'EFF5'));
+    const payload = JSON.stringify({
+      session_id: 'EFF5', version: '2.1.285', effort: { level: 'high' },
+      model: { display_name: 'M' }, context_window: { used_percentage: 20 },
+    });
+    const result = runScript(STATUSLINE_SCRIPT, payload, { HOME: home, USERPROFILE: home });
+    assert.strictEqual(result.status, 0);
+    assert.ok(result.stdout.includes('[M (high)]'), result.stdout);
   } finally {
     cleanupTmpHome(home);
   }
