@@ -254,6 +254,110 @@ test('history: writeSessionEffort writes only when the content changes', () => {
 });
 
 // ---------------------------------------------------------------------------
+// readDelegationTypes — agent names for the per-subagent rows
+// ---------------------------------------------------------------------------
+
+// Write JSONL lines to the S1 counter file of an isolated home.
+function writeCounterLines(home, lines) {
+  const file = path.join(home, '.claude', 'state', 'delegations-S1.jsonl');
+  fs.writeFileSync(file, lines.map((l) => (typeof l === 'string' ? l : JSON.stringify(l))).join('\n') + '\n');
+}
+
+test('history: readDelegationTypes maps a background agent_id to its delegation type', () => {
+  const lib = require('../scripts/lib/history');
+  withHome((home) => {
+    writeCounterLines(home, [
+      { id: 'toolu_1', type: 'Explore', desc: 'map the repo', started: '2026-09-29T00:00:00Z', status: 'running', background: true },
+      { id: 'toolu_1', agent_id: 'a558e1f456c3a8813', status: 'bg_launched' },
+    ]);
+    const r = lib.readDelegationTypes('S1');
+    assert.strictEqual(r.byAgentId.get('a558e1f456c3a8813'), 'Explore');
+    // Resolved exactly, so it stays out of the description map.
+    assert.strictEqual(r.byDesc.has('map the repo'), false);
+  });
+});
+
+test('history: readDelegationTypes keeps agent_id-mapped delegations out of the description map', () => {
+  const lib = require('../scripts/lib/history');
+  withHome((home) => {
+    writeCounterLines(home, [
+      { id: 'toolu_1', type: 'Explore', desc: 'review code', status: 'running', background: true },
+      { id: 'toolu_1', agent_id: 'agent_bg', status: 'bg_launched' },
+      { id: 'toolu_2', type: 'sdd-verify', desc: 'review code', status: 'running' },
+    ]);
+    const r = lib.readDelegationTypes('S1');
+    assert.strictEqual(r.byAgentId.get('agent_bg'), 'Explore');
+    assert.deepStrictEqual([...r.byDesc.get('review code')], ['sdd-verify']);
+  });
+});
+
+test('history: readDelegationTypes collects every running type per description', () => {
+  const lib = require('../scripts/lib/history');
+  withHome((home) => {
+    writeCounterLines(home, [
+      { id: 'toolu_1', type: 'Explore', desc: 'same', status: 'running' },
+      { id: 'toolu_2', type: 'sdd-apply', desc: 'same', status: 'running' },
+      { id: 'toolu_3', type: '', desc: 'untyped', status: 'running' },
+    ]);
+    const r = lib.readDelegationTypes('S1');
+    assert.deepStrictEqual([...r.byDesc.get('same')].sort(), ['Explore', 'sdd-apply']);
+    // An omitted subagent_type runs as general-purpose.
+    assert.deepStrictEqual([...r.byDesc.get('untyped')], ['general-purpose']);
+  });
+});
+
+test('history: readDelegationTypes maps an omitted type to general-purpose', () => {
+  const lib = require('../scripts/lib/history');
+  withHome((home) => {
+    writeCounterLines(home, [
+      { id: 'toolu_1', type: '', desc: 'bg untyped', status: 'running', background: true },
+      { id: 'toolu_1', agent_id: 'agent_bg', status: 'bg_launched' },
+      { id: 'toolu_2', desc: 'fg untyped', status: 'running' },
+      { id: 'toolu_3', type: 'general-purpose', desc: 'fg untyped', status: 'running' },
+    ]);
+    const r = lib.readDelegationTypes('S1');
+    assert.strictEqual(r.byAgentId.get('agent_bg'), 'general-purpose');
+    assert.deepStrictEqual([...r.byDesc.get('fg untyped')], ['general-purpose']);
+  });
+});
+
+test('history: readDelegationTypes excludes finished delegations from the description map', () => {
+  const lib = require('../scripts/lib/history');
+  withHome((home) => {
+    writeCounterLines(home, [
+      { id: 'toolu_1', type: 'Explore', desc: 'count files', status: 'running' },
+      { id: 'toolu_1', ended: '2026-09-29T00:01:00Z', status: 'done' },
+      { id: 'toolu_2', type: 'Plan', desc: 'count files', status: 'running' },
+      { id: 'toolu_2', ended: '2026-09-29T00:01:00Z', status: 'failed' },
+      { id: 'toolu_3', type: 'sdd-apply', desc: 'still going', status: 'running' },
+    ]);
+    const r = lib.readDelegationTypes('S1');
+    assert.strictEqual(r.byDesc.has('count files'), false);
+    assert.deepStrictEqual([...r.byDesc.get('still going')], ['sdd-apply']);
+  });
+});
+
+test('history: readDelegationTypes is empty for missing, corrupt, or unsafe input', () => {
+  const lib = require('../scripts/lib/history');
+  withHome((home) => {
+    for (const sid of ['S1', '', '../x', null]) {
+      const r = lib.readDelegationTypes(sid);
+      assert.strictEqual(r.byAgentId.size, 0);
+      assert.strictEqual(r.byDesc.size, 0);
+    }
+    writeCounterLines(home, [
+      '{ nope',
+      'null',
+      '[1]',
+      { id: 'toolu_1', type: 'Explore', desc: 'constructor', status: 'running' },
+    ]);
+    const r = lib.readDelegationTypes('S1');
+    assert.deepStrictEqual([...r.byDesc.keys()], ['constructor']);
+    assert.strictEqual(r.byAgentId.size, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // module.exports check — all expected functions exported (slice 1 + slice 2)
 // ---------------------------------------------------------------------------
 test('history: module exports all required functions', () => {
@@ -261,7 +365,7 @@ test('history: module exports all required functions', () => {
   const required = [
     'historyPath', 'counterPath', 'sessionStartPath', 'sessionEffortPath',
     'readSessionEffort', 'writeSessionEffort',
-    'readCounters', 'atomicWrite',
+    'readCounters', 'readDelegationTypes', 'atomicWrite',
     'nowEpochSeconds', 'isoToEpochSeconds',
     // slice 2 write-side
     'historyAppend', 'counterAppend', 'historyTrimIfNeeded', 'nowIsoZ',

@@ -3,7 +3,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { REPO_ROOT, runScript, mkTmpHome, cleanupTmpHome, sessionEffortFile } = require('./_helpers');
+const {
+  REPO_ROOT,
+  runScript,
+  mkTmpHome,
+  cleanupTmpHome,
+  sessionEffortFile,
+  counterFile,
+} = require('./_helpers');
 const { visibleWidth } = require('../scripts/lib/width');
 
 const SCRIPT = path.join(REPO_ROOT, 'scripts', 'subagent-statusline.js');
@@ -105,9 +112,10 @@ test('subagent-statusline: non-Claude model ids fall back to ⋯ instead of a gu
 // ---------------------------------------------------------------------------
 
 test('subagent-statusline: suppresses the internal local_agent task type', () => {
-  // Claude Code sends `type: "local_agent"` for every foreground sub-agent, so
-  // rendering it costs width and tells the user nothing. Verified against a real
-  // captured payload: the requested agent type is not exposed in any field.
+  // Claude Code sends `type: "local_agent"` for every sub-agent, so rendering it
+  // costs width and tells the user nothing. The real agent name comes from the
+  // delegation hooks instead (see the agent-name tests below); with no session
+  // counter file there is nothing to recover and the type is simply omitted.
   const payload = {
     columns: 200,
     tasks: [{ id: 'a', model: 'claude-haiku-4-5', type: 'local_agent', description: 'count files' }],
@@ -125,6 +133,146 @@ test('subagent-statusline: keeps a task type that is not an internal placeholder
   };
   const r = runScript(SCRIPT, JSON.stringify(payload));
   assert.strictEqual(plain(rows(r.stdout)[0].content), 'Haiku 4.5 · Explore · count files');
+});
+
+// ---------------------------------------------------------------------------
+// agent name recovered from the delegation hooks' counter file
+// ---------------------------------------------------------------------------
+
+// Run the renderer with an isolated HOME whose session counter file holds
+// `lines` (skipped when undefined). Returns the visible rows.
+function runWithDelegations(tasks, lines, opts) {
+  const home = mkTmpHome();
+  const sid = 'SESS_NAMES';
+  try {
+    if (lines !== undefined) {
+      fs.writeFileSync(counterFile(home, sid), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    }
+    const payload = { session_id: sid, columns: (opts && opts.columns) || 200, tasks };
+    const r = runScript(SCRIPT, JSON.stringify(payload), { HOME: home, USERPROFILE: home });
+    assert.strictEqual(r.status, 0);
+    return rows(r.stdout).map((x) => plain(x.content));
+  } finally {
+    cleanupTmpHome(home);
+  }
+}
+
+// A payload task as Claude Code sends it: `id` is the agent id, `type` is the
+// internal placeholder.
+const liveTask = (id, description) => ({
+  id,
+  type: 'local_agent',
+  model: 'claude-haiku-4-5',
+  description,
+  label: description,
+});
+
+test('subagent-statusline: names a background agent by its exact agent_id', () => {
+  const out = runWithDelegations([liveTask('a558e1f456c3a8813', 'map the repo')], [
+    { id: 'toolu_1', type: 'Explore', desc: 'map the repo', status: 'running', background: true },
+    { id: 'toolu_1', agent_id: 'a558e1f456c3a8813', status: 'bg_launched' },
+  ]);
+  assert.deepStrictEqual(out, ['Haiku 4.5 · Explore · map the repo']);
+});
+
+test('subagent-statusline: the exact agent_id match wins over an ambiguous description', () => {
+  const out = runWithDelegations([liveTask('agent_bg', 'same words')], [
+    { id: 'toolu_1', type: 'Explore', desc: 'same words', status: 'running', background: true },
+    { id: 'toolu_1', agent_id: 'agent_bg', status: 'bg_launched' },
+    { id: 'toolu_2', type: 'sdd-apply', desc: 'same words', status: 'running' },
+  ]);
+  assert.deepStrictEqual(out, ['Haiku 4.5 · Explore · same words']);
+});
+
+test('subagent-statusline: names a foreground agent by its exact description', () => {
+  // Foreground agents have no agent_id line until they finish.
+  const out = runWithDelegations([liveTask('agent_fg', 'count files')], [
+    { id: 'toolu_1', type: 'sdd-apply', desc: 'count files', status: 'running' },
+    { id: 'toolu_2', type: 'Plan', desc: 'count files and more', status: 'running' },
+  ]);
+  assert.deepStrictEqual(out, ['Haiku 4.5 · sdd-apply · count files']);
+});
+
+test('subagent-statusline: several running matches of one type still resolve', () => {
+  const out = runWithDelegations([liveTask('agent_fg', 'count files')], [
+    { id: 'toolu_1', type: 'Explore', desc: 'count files', status: 'running' },
+    { id: 'toolu_2', type: 'Explore', desc: 'count files', status: 'running' },
+  ]);
+  assert.deepStrictEqual(out, ['Haiku 4.5 · Explore · count files']);
+});
+
+test('subagent-statusline: an ambiguous description renders no name rather than a guess', () => {
+  const out = runWithDelegations([liveTask('agent_fg', 'count files')], [
+    { id: 'toolu_1', type: 'Explore', desc: 'count files', status: 'running' },
+    { id: 'toolu_2', type: 'sdd-apply', desc: 'count files', status: 'running' },
+  ]);
+  assert.deepStrictEqual(out, ['Haiku 4.5 · count files']);
+});
+
+test('subagent-statusline: an omitted type differing from another match is ambiguous', () => {
+  const out = runWithDelegations([liveTask('agent_fg', 'count files')], [
+    { id: 'toolu_1', type: 'Explore', desc: 'count files', status: 'running' },
+    { id: 'toolu_2', type: '', desc: 'count files', status: 'running' },
+  ]);
+  assert.deepStrictEqual(out, ['Haiku 4.5 · count files']);
+});
+
+test('subagent-statusline: an omitted type agrees with an explicit general-purpose', () => {
+  const out = runWithDelegations([liveTask('agent_fg', 'count files')], [
+    { id: 'toolu_1', type: 'general-purpose', desc: 'count files', status: 'running' },
+    { id: 'toolu_2', type: '', desc: 'count files', status: 'running' },
+  ]);
+  assert.deepStrictEqual(out, ['Haiku 4.5 · general-purpose · count files']);
+});
+
+test('subagent-statusline: an omitted type renders general-purpose', () => {
+  const out = runWithDelegations([liveTask('agent_bg', 'bg work'), liveTask('agent_fg', 'fg work')], [
+    { id: 'toolu_1', type: '', desc: 'bg work', status: 'running', background: true },
+    { id: 'toolu_1', agent_id: 'agent_bg', status: 'bg_launched' },
+    { id: 'toolu_2', desc: 'fg work', status: 'running' },
+  ]);
+  assert.deepStrictEqual(out, [
+    'Haiku 4.5 · general-purpose · bg work',
+    'Haiku 4.5 · general-purpose · fg work',
+  ]);
+});
+
+test('subagent-statusline: a background agent_id match does not make a foreground description ambiguous', () => {
+  const out = runWithDelegations([liveTask('agent_bg', 'review code'), liveTask('agent_fg', 'review code')], [
+    { id: 'toolu_1', type: 'Explore', desc: 'review code', status: 'running', background: true },
+    { id: 'toolu_1', agent_id: 'agent_bg', status: 'bg_launched' },
+    { id: 'toolu_2', type: 'sdd-verify', desc: 'review code', status: 'running' },
+  ]);
+  assert.deepStrictEqual(out, [
+    'Haiku 4.5 · Explore · review code',
+    'Haiku 4.5 · sdd-verify · review code',
+  ]);
+});
+
+test('subagent-statusline: the description match ignores finished delegations', () => {
+  const out = runWithDelegations([liveTask('agent_fg', 'count files')], [
+    { id: 'toolu_1', type: 'Explore', desc: 'count files', status: 'running' },
+    { id: 'toolu_1', ended: '2026-09-29T00:01:00Z', status: 'done' },
+    { id: 'toolu_2', type: 'Plan', desc: 'count files', status: 'running' },
+    { id: 'toolu_2', ended: '2026-09-29T00:01:00Z', status: 'failed' },
+  ]);
+  assert.deepStrictEqual(out, ['Haiku 4.5 · count files']);
+});
+
+test('subagent-statusline: a non-internal payload type wins over the counter file', () => {
+  const out = runWithDelegations(
+    [{ ...liveTask('agent_bg', 'map the repo'), type: 'general-purpose' }],
+    [
+      { id: 'toolu_1', type: 'Explore', desc: 'map the repo', status: 'running' },
+      { id: 'toolu_1', agent_id: 'agent_bg', status: 'bg_launched' },
+    ],
+  );
+  assert.deepStrictEqual(out, ['Haiku 4.5 · general-purpose · map the repo']);
+});
+
+test('subagent-statusline: a missing counter file renders no name and does not fail', () => {
+  const out = runWithDelegations([liveTask('agent_fg', 'count files')], undefined);
+  assert.deepStrictEqual(out, ['Haiku 4.5 · count files']);
 });
 
 test('subagent-statusline: renders elapsed time from startTime', () => {
@@ -688,6 +836,36 @@ test('subagent-statusline: sheds optional segments so a narrow pane still fits',
       `columns=${columns} produced width ${visibleWidth(visible)}: ${visible}`,
     );
   }
+});
+
+test('subagent-statusline: narrow panes shed the bar before the agent name', () => {
+  // Fixed pieces: "Opus 4.8 (xhigh)" 16 + " · Explore" 10 + bar 17 + " 12k/200k" 9
+  // + " · 2h 2m" 8 = 60 columns. At 50 dropping the bar alone is enough; the old
+  // order dropped the name first and kept the bar.
+  const task = {
+    id: 'a',
+    model: 'claude-opus-4-8',
+    effort: 'xhigh',
+    type: 'Explore',
+    description: 'a fairly long description that will not fit',
+    tokenCount: 12022,
+    contextWindowSize: 200000,
+    startTime: Date.now() - 7325000,
+  };
+  const at = (columns) =>
+    plain(rows(runScript(SCRIPT, JSON.stringify({ columns, tasks: [task] })).stdout)[0].content);
+
+  const wide = at(50);
+  assert.ok(wide.includes('Explore'), `name must survive: ${wide}`);
+  assert.ok(!/[█░]/.test(wide), `bar must be shed first: ${wide}`);
+  assert.ok(wide.includes('12k/200k') && wide.includes('2h 2m'), wide);
+
+  // Then the name goes, before elapsed and usage.
+  const narrow = at(36);
+  assert.strictEqual(narrow, 'Opus 4.8 (xhigh) 12k/200k · 2h 2m');
+
+  // Then elapsed, before usage.
+  assert.strictEqual(at(26), 'Opus 4.8 (xhigh) 12k/200k');
 });
 
 test('subagent-statusline: a wide-character description is budgeted by rendered width', () => {

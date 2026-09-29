@@ -41,12 +41,12 @@ my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m
 Además de la statusline agregada, el plugin puede renderizar **una fila por cada sub-agente en ejecución**, cada una encabezada por el **modelo resuelto** en el que corre ese sub-agente (`Opus 4.8`, `Haiku 4.5`, `Sonnet 5`, `Fable 5`…). Usa el segundo contrato de statusline de Claude Code, `subagentStatusLine`: Claude Code envía un único objeto JSON por stdin (`{ ...campos, columns, tasks[] }`) y el plugin imprime una línea `{"id","content"}` por fila.
 
 ```
-Sonnet 5 · Adversarial review of the renderer █░░░░░░░░░░░░░░░ 20k/1M · 1m 12s
-Opus 5 · Audit the changelog entries █████░░░░░░░░░░░ 310k/1M · 1m 7s
-Haiku 4.5 · Map the auth module █████████████░░░ 168k/200k · 8m 24s
+Sonnet 5 (~medium) · jd-judge-a · Adversarial review of the renderer █░░░░░░░░░░░░░░░ 20k/1M · 1m 12s
+Opus 5 (xhigh) · sdd-apply · Audit the changelog entries █████░░░░░░░░░░░ 310k/1M · 1m 7s
+Haiku 4.5 (high) · Explore · Map the auth module █████████████░░░ 168k/200k · 8m 24s
 ```
 
-Cada fila combina: el **modelo** (en negrita y cian; si Claude Code no expone el modelo del task, cae al placeholder `⋯`), el **effort** de ese sub-agente entre paréntesis (ver más abajo), el **tipo** del sub-agente cuando aporta información, la **descripción** y una cola de métricas en vivo: la **barra de contexto**, el **contexto usado sobre la ventana** y el **tiempo transcurrido**.
+Cada fila combina: el **modelo** (en negrita y cian; si Claude Code no expone el modelo del task, cae al placeholder `⋯`), el **effort** de ese sub-agente entre paréntesis (ver más abajo), el **nombre** del sub-agente cuando se puede recuperar (ver más abajo), la **descripción** y una cola de métricas en vivo: la **barra de contexto**, el **contexto usado sobre la ventana** y el **tiempo transcurrido**.
 
 **Effort** (`(high)`, `(32k)`, `(~medium)`) — se muestra entre paréntesis después del modelo y admite tres formas:
 
@@ -64,9 +64,9 @@ El effort heredado solo se muestra si ese archivo fue escrito por **Claude Code 
 
 > **Sobre detectar sub-agentes colgados**: la barra te dice cuánto contexto lleva consumido, no si sigue avanzando. Un sub-agente trabado y uno lento se ven igual. La señal práctica es la combinación de un tiempo transcurrido alto con una barra que no se mueve entre refrescos, no un único vistazo a la fila.
 
-> El **tipo** del sub-agente casi nunca aparece: Claude Code manda `local_agent` para todo sub-agente en foreground, un valor interno idéntico en todas las filas, así que el plugin lo suprime en lugar de gastar ancho en ruido. El tipo que pediste al delegar (`Explore`, `general-purpose`…) no viaja en el payload.
+> **Nombre del sub-agente** (`Explore`, `sdd-apply`…) — Claude Code manda `local_agent` como tipo de todo sub-agente, un valor interno idéntico en todas las filas, y el nombre que pediste al delegar no viaja en el payload. El plugin lo recupera del archivo de contadores de la sesión que escriben sus propios hooks (`~/.claude/state/delegations-<session_id>.jsonl`). Un sub-agente en background se identifica de forma exacta por su `agent_id`. Uno en foreground no tiene `agent_id` registrado mientras corre, así que se busca una delegación todavía en curso con exactamente la misma descripción: si todas las coincidencias comparten un mismo nombre, se muestra; si hay nombres distintos (o ninguno), la fila va sin nombre en lugar de adivinar. Una delegación que omitió `subagent_type` se muestra como `general-purpose`, que es lo que ejecuta Claude Code. Una delegación que quedó en curso por un crash o una interrupción nunca se cierra, así que las delegaciones en foreground posteriores con la misma descripción pueden ir sin nombre durante el resto de esa sesión, nunca con uno incorrecto. Los hooks corren de forma asíncrona, por lo que el nombre puede faltar en el primer o segundo refresco tras el lanzamiento. Si el payload trae un tipo real que no sea interno, ese gana. Sin archivo de contadores (hooks no instalados, sesión sin `session_id`), la fila simplemente omite el nombre.
 
-**Ancho de la fila** — la fila nunca excede el `columns` que informa Claude Code, y el ancho se mide en columnas renderizadas y no en caracteres, así que una descripción en japonés o con emojis se presupuesta correctamente y el truncado nunca parte un emoji al medio. Cuando el espacio no alcanza, primero se acorta la descripción y después se descartan segmentos por orden de menor valor informativo: el tipo, la barra, el tiempo y por último la cifra de contexto. El modelo nunca se descarta, porque es el dato por el que la fila existe.
+**Ancho de la fila** — la fila nunca excede el `columns` que informa Claude Code, y el ancho se mide en columnas renderizadas y no en caracteres, así que una descripción en japonés o con emojis se presupuesta correctamente y el truncado nunca parte un emoji al medio. Cuando el espacio no alcanza, primero se acorta la descripción y después se descartan segmentos por orden de menor valor informativo: la barra, el nombre del sub-agente, el tiempo y por último la cifra de contexto. La barra cae antes que el nombre porque la cifra de contexto que la acompaña ya transmite lo mismo. El modelo nunca se descarta, porque es el dato por el que la fila existe.
 
 El renderizador vive en `scripts/subagent-statusline.js` y se registra automáticamente bajo la clave `subagentStatusLine` de `~/.claude/settings.json`, de forma aditiva: **no toca ni modifica tu `statusLine` existente**. Si ya tenés un `subagentStatusLine` propio, el plugin lo respeta y no lo sobrescribe.
 
@@ -193,7 +193,7 @@ node --version   # debe ser >= 18
 npm test
 ```
 
-Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (280 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
+Antes de fusionar cualquier cambio, todos los scripts deben pasar `npm test` (299 tests) sin ningún fallo. La CI ejecuta la matriz completa en Ubuntu, macOS y Windows en cada push.
 
 ## Licencia
 

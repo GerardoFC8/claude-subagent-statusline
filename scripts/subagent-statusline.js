@@ -18,7 +18,8 @@ const { formatDuration } = require('./lib/duration');
 // description under-reports and an emoji must not be cut mid-surrogate.
 const { visibleWidth, truncateToWidth } = require('./lib/width');
 // The session effort is persisted by scripts/statusline.js; this payload has none.
-const { readSessionEffort } = require('./lib/history');
+// Agent names come from the counter file the delegation hooks write.
+const { readSessionEffort, readDelegationTypes } = require('./lib/history');
 const { versionAtLeast } = require('./lib/version');
 
 // First Claude Code release that sends a per-task `effort` for explicit values.
@@ -28,9 +29,11 @@ const { versionAtLeast } = require('./lib/version');
 const MIN_VERSION_PER_TASK_EFFORT = '2.1.214';
 
 // Task types Claude Code uses internally rather than to describe the agent. They
-// are identical across every foreground sub-agent, so rendering them costs width
-// and conveys nothing. Confirmed against a captured live payload: the requested
-// agent type ("Explore", "general-purpose", …) is not exposed in any field.
+// are identical across every sub-agent, so rendering them costs width and conveys
+// nothing. Confirmed against a captured live payload: the requested agent type
+// ("Explore", "general-purpose", …) is not exposed in any field. It is recovered
+// instead from the session counter file our delegation hooks write — see
+// agentName below.
 const INTERNAL_TASK_TYPES = new Set(['local_agent']);
 
 // Context-fill bar. Fixed width so the row never changes shape between ticks and
@@ -104,12 +107,37 @@ function main() {
     return sessionEffort;
   };
 
+  // The session's delegation types, read at most once per invocation and only
+  // when a task arrives without a usable type.
+  let delegations;
+  const agentName = (t) => {
+    if (delegations === undefined) {
+      const sid = typeof data.session_id === 'string' ? data.session_id : '';
+      delegations = readDelegationTypes(sid);
+    }
+    // Exact: a background agent's id was recorded against its tool_use_id.
+    const exact = delegations.byAgentId.get(t.id);
+    if (exact) return exact;
+    // Fallback for foreground agents, which have no agent_id line while running:
+    // a running delegation with the same description. Several matches resolve
+    // only when they all share one known type; otherwise render no name rather
+    // than guess.
+    const desc = typeof t.description === 'string' ? t.description : '';
+    const types = desc ? delegations.byDesc.get(desc) : undefined;
+    if (types && types.size === 1) {
+      const [only] = types;
+      if (only) return only;
+    }
+    return '';
+  };
+
   for (const t of data.tasks) {
     if (!t || typeof t.id !== 'string') continue;
 
     const model = parseModelFromId(t.model);
     const typeRaw = typeof t.type === 'string' ? t.type : typeof t.name === 'string' ? t.name : '';
-    const type = INTERNAL_TASK_TYPES.has(typeRaw) ? '' : typeRaw;
+    // A real payload type wins; only an empty or internal one is looked up.
+    const type = typeRaw && !INTERNAL_TASK_TYPES.has(typeRaw) ? typeRaw : agentName(t);
     const desc = typeof t.description === 'string' ? t.description : '';
 
     // Effort, rendered right after the model so these rows match the main
@@ -177,8 +205,9 @@ function main() {
 
     // Truncating the description alone cannot honour `columns` once the fixed
     // pieces exceed it on their own, which happens on narrow panes. Shed optional
-    // segments least-informative-first until the row fits.
-    for (const segment of ['type', 'bar', 'elapsed', 'usage']) {
+    // segments least-informative-first until the row fits. The bar goes before
+    // the agent name: the usage figure beside it carries the same information.
+    for (const segment of ['bar', 'type', 'elapsed', 'usage']) {
       if (rowWidth(descOut) <= columns) break;
       keep[segment] = false;
       fitDescription();

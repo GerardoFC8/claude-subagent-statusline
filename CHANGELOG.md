@@ -7,6 +7,42 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.15.0] — 2026-09-29
+
+Per-subagent rows now show the sub-agent's name (`Explore`, `sdd-apply`, …). Claude Code's `subagentStatusLine` payload sends `type: "local_agent"` for every task, so the name the delegation asked for never reached the row; it is now recovered from the per-session counter file the plugin's own delegation hooks already write.
+
+### Added
+
+- **Sub-agent name on per-subagent rows** — when a task's payload type is empty or internal, `scripts/subagent-statusline.js` resolves the name from `~/.claude/state/delegations-<session_id>.jsonl`, read at most once per invocation and only when some task needs it:
+  - **Exact (background agents)** — the payload task `id` is the agent id, which the PostToolUse hook records against the tool_use_id in its `bg_launched` line; the name is that delegation's PreToolUse `type`.
+  - **Description fallback (foreground agents)** — these have no `agent_id` line while running, so the row takes the running delegations (not `done`/`failed`) whose `desc` equals the task `description` exactly. The name is shown only when every match shares one type; differing types or no match render no name rather than a guess. Delegations already resolved by `agent_id` are left out of this match.
+  - An omitted `subagent_type` (empty `type` in the counter file) is shown as `general-purpose`, the agent Claude Code runs in that case.
+  - A non-internal payload type still wins, exactly as before.
+- **`readDelegationTypes`** in `scripts/lib/history.js` — reads the counter file once and returns `byAgentId` (agent id → type) and `byDesc` (description → set of types still running), as `Map`s so an arbitrary description cannot collide with prototype keys. Entries are aggregated per tool_use_id before closed delegations are excluded, since the closing line carries no description. Missing file, corrupt lines, or an unsafe session id yield empty maps; it never throws.
+
+### Changed
+
+- **Shedding order on narrow panes** — the name now carries information, so the context bar is shed first, then the name, then the elapsed time, then the context figure (previously the type went first). The context figure beside the bar already conveys usage.
+- **`README.md` / `README.en.md`** — the per-subagent rows section explains where the name comes from, the exact and fallback matches, and the new shedding order. Test count bumped to 299.
+- **Version** bumped to `0.15.0` across `plugin.json`, `package.json`, and `marketplace.json`.
+
+### Known limitations
+
+- **Foreground agents with identical descriptions but different types show no name** while both run — by design, the row never guesses.
+- **Requires the plugin's delegation hooks** — without the counter file (hooks disabled, or a payload without `session_id`) rows render without a name, as in `0.14.0`.
+- **Unclosed delegations** — a delegation left `running` by a crash or interrupt is never closed, so for the rest of that session a foreground delegation with the same description may render without a name. It never renders a wrong one.
+- **Name may lag briefly after launch** — hooks run async, so the first refresh or two after a launch can miss the name until the hook's line lands.
+
+### Updating
+
+```
+claude plugin update claude-subagent-statusline@claude-subagent-statusline
+```
+
+Restart Claude Code to apply.
+
+---
+
 ## [0.14.0] — 2026-09-29
 
 Per-subagent rows now show the effort a sub-agent actually runs at in the common case: when it inherits the session effort. Claude Code omits the per-task `effort` field for those sub-agents, and the `subagentStatusLine` payload carries no session effort of its own, so the main statusline now hands it over through a per-session state file.

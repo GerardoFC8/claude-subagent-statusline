@@ -154,6 +154,57 @@ function findToolUseIdByAgentId(sessionId, agentId) {
   return foundId;
 }
 
+// Agent names for the per-subagent rows, whose payload only carries the internal
+// "local_agent" type. Reads a session's counter file once and returns:
+//   byAgentId: agent_id → delegation type (background agents, from bg_launched)
+//   byDesc:    description → Set of types of delegations still running
+// Entries are aggregated per tool_use_id first, because the done/failed line
+// that closes a delegation carries no description. Delegations with an agent_id
+// resolve exactly and stay out of byDesc, so they never make a foreground agent
+// with the same description ambiguous.
+// Maps rather than plain objects: a description is arbitrary text and must not
+// collide with prototype keys. Missing/corrupt file → empty maps. Never throws.
+function readDelegationTypes(sessionId) {
+  const byAgentId = new Map();
+  const byDesc = new Map();
+  const file = counterPath(sessionId);
+  if (!file) return { byAgentId, byDesc };
+  let data;
+  try { data = fs.readFileSync(file, 'utf8'); } catch (_) { return { byAgentId, byDesc }; }
+  const started = new Map(); // tool_use_id → { type, desc }
+  const agentIds = new Map(); // agent_id → tool_use_id
+  const closed = new Set();
+  for (const raw of data.split('\n')) {
+    if (!raw) continue;
+    let obj;
+    try { obj = JSON.parse(raw); } catch (_) { continue; }
+    if (!obj || typeof obj !== 'object') continue;
+    const id = obj.id;
+    if (typeof id !== 'string' || id === '') continue;
+    if (obj.status === 'running') {
+      started.set(id, {
+        // An omitted subagent_type runs as general-purpose in Claude Code.
+        type: typeof obj.type === 'string' && obj.type !== '' ? obj.type : 'general-purpose',
+        desc: typeof obj.desc === 'string' ? obj.desc : '',
+      });
+    }
+    if (typeof obj.agent_id === 'string' && obj.agent_id !== '') agentIds.set(obj.agent_id, id);
+    if (obj.status === 'done' || obj.status === 'failed') closed.add(id);
+  }
+  const mapped = new Set();
+  for (const [agentId, id] of agentIds) {
+    mapped.add(id);
+    const entry = started.get(id);
+    if (entry) byAgentId.set(agentId, entry.type);
+  }
+  for (const [id, entry] of started) {
+    if (closed.has(id) || mapped.has(id)) continue;
+    if (!byDesc.has(entry.desc)) byDesc.set(entry.desc, new Set());
+    byDesc.get(entry.desc).add(entry.type);
+  }
+  return { byAgentId, byDesc };
+}
+
 // Read the session effort record written by writeSessionEffort. Returns the
 // parsed object, or null when the file is missing, unreadable, corrupt, or not a
 // JSON object. Never throws.
@@ -244,6 +295,7 @@ module.exports = {
   // Read helpers
   readCounters,
   findToolUseIdByAgentId,
+  readDelegationTypes,
   readSessionEffort,
   // Write helpers (slice 2)
   counterAppend,

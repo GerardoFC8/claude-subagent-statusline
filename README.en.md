@@ -41,12 +41,12 @@ my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m
 On top of the aggregate statusline, the plugin can render **one row per running sub-agent**, each leading with the **resolved model** that sub-agent runs on (`Opus 4.8`, `Haiku 4.5`, `Sonnet 5`, `Fable 5`…). It uses Claude Code's second statusline contract, `subagentStatusLine`: Claude Code pipes a single JSON object on stdin (`{ ...baseFields, columns, tasks[] }`) and the plugin writes one `{"id","content"}` line per row.
 
 ```
-Sonnet 5 · Adversarial review of the renderer █░░░░░░░░░░░░░░░ 20k/1M · 1m 12s
-Opus 5 · Audit the changelog entries █████░░░░░░░░░░░ 310k/1M · 1m 7s
-Haiku 4.5 · Map the auth module █████████████░░░ 168k/200k · 8m 24s
+Sonnet 5 (~medium) · jd-judge-a · Adversarial review of the renderer █░░░░░░░░░░░░░░░ 20k/1M · 1m 12s
+Opus 5 (xhigh) · sdd-apply · Audit the changelog entries █████░░░░░░░░░░░ 310k/1M · 1m 7s
+Haiku 4.5 (high) · Explore · Map the auth module █████████████░░░ 168k/200k · 8m 24s
 ```
 
-Each row combines: the **model** (bold cyan; falls back to the `⋯` placeholder when Claude Code does not expose the task's model), that sub-agent's **effort** in parentheses (see below), the sub-agent **type** when it carries information, the **description**, and a tail of live metrics: the **context bar**, the **context used against the window**, and the **elapsed time**.
+Each row combines: the **model** (bold cyan; falls back to the `⋯` placeholder when Claude Code does not expose the task's model), that sub-agent's **effort** in parentheses (see below), the sub-agent **name** when it can be recovered (see below), the **description**, and a tail of live metrics: the **context bar**, the **context used against the window**, and the **elapsed time**.
 
 **Effort** (`(high)`, `(32k)`, `(~medium)`) — shown in parentheses after the model, in one of three forms:
 
@@ -64,9 +64,9 @@ Inherited effort is shown only when that file was written by **Claude Code 2.1.2
 
 > **On spotting stalled sub-agents**: the bar tells you how much context has been consumed, not whether it is still moving. A stalled sub-agent and a slow one look the same. The practical signal is a high elapsed time paired with a bar that does not move between refreshes, not a single glance at the row.
 
-> The sub-agent **type** rarely shows up: Claude Code sends `local_agent` for every foreground sub-agent, an internal value identical across all rows, so the plugin suppresses it rather than spending width on noise. The agent type you requested when delegating (`Explore`, `general-purpose`, …) is not carried in the payload at all.
+> **Sub-agent name** (`Explore`, `sdd-apply`, …) — Claude Code sends `local_agent` as the type of every sub-agent, an internal value identical across all rows, and the name you requested when delegating is not carried in the payload. The plugin recovers it from the session counter file its own hooks write (`~/.claude/state/delegations-<session_id>.jsonl`). A background sub-agent is matched exactly by its `agent_id`. A foreground one has no recorded `agent_id` while it runs, so the row looks for a still-running delegation with exactly the same description: if every match shares one name it is shown; if the names differ (or none is known) the row goes without a name rather than guess. A delegation that omitted `subagent_type` shows as `general-purpose`, which is what Claude Code runs. A delegation left running by a crash or interrupt is never closed, so later foreground delegations with the same description may go without a name for the rest of that session — never a wrong one. Hooks run async, so the name may be missing for the first refresh or two after launch. A real, non-internal type in the payload still wins. With no counter file (hooks not installed, no `session_id` in the payload) the row simply omits the name.
 
-**Row width** — a row never exceeds the `columns` Claude Code reports, and width is measured in rendered columns rather than characters, so a Japanese or emoji-bearing description is budgeted correctly and truncation never severs an emoji. When space runs short the description is shortened first, then segments are dropped in order of least informative value: the type, the bar, the elapsed time, and finally the context figure. The model is never dropped, since it is what the row exists to show.
+**Row width** — a row never exceeds the `columns` Claude Code reports, and width is measured in rendered columns rather than characters, so a Japanese or emoji-bearing description is budgeted correctly and truncation never severs an emoji. When space runs short the description is shortened first, then segments are dropped in order of least informative value: the bar, the sub-agent name, the elapsed time, and finally the context figure. The bar goes before the name because the context figure beside it carries the same information. The model is never dropped, since it is what the row exists to show.
 
 The renderer lives at `scripts/subagent-statusline.js` and is registered automatically under the `subagentStatusLine` key of `~/.claude/settings.json`, additively: it **never touches or changes your existing `statusLine`**. If you already have your own `subagentStatusLine`, the plugin leaves it intact and does not overwrite it.
 
@@ -193,7 +193,7 @@ node --version   # must be >= 18
 npm test
 ```
 
-All changes must pass `npm test` (280 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
+All changes must pass `npm test` (299 tests) with zero failures before merging. CI runs the full matrix on Ubuntu, macOS, and Windows on every push.
 
 ## License
 
