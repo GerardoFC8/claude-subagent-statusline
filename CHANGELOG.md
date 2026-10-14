@@ -7,6 +7,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`subagent-statusline-desktop`** — a second plugin in this marketplace, in `desktop/`: a Claude Code mod (function hooks) that draws the statusline as a band above the prompt in Claude Desktop's Code tab, where the `statusLine` command is not drawn. It shows the project (repository folder, else the folder, else `sin carpeta`), model and effort, session cost, context bar, elapsed time, `⚡ ✓ ✗` sub-agent counters, 5h and weekly usage (without reset times), and one row per running sub-agent with its model, effort, name, description, context bar, tokens and elapsed time. It draws only on the desktop surface, so the Node statusline keeps the terminal. Install with `claude plugin install subagent-statusline-desktop@claude-subagent-statusline`.
+
+---
+
 ## [0.15.0] — 2026-09-29
 
 Per-subagent rows now show the sub-agent's name (`Explore`, `sdd-apply`, …). Claude Code's `subagentStatusLine` payload sends `type: "local_agent"` for every task, so the name the delegation asked for never reached the row; it is now recovered from the per-session counter file the plugin's own delegation hooks already write.

@@ -79,6 +79,28 @@ claude plugin install claude-subagent-statusline@claude-subagent-statusline
 
 > **Restart Claude Code after install.** `settings.json` does not hot-reload — the plugin hooks will not fire until you fully restart the application.
 
+## Claude Desktop (Code tab)
+
+Claude Desktop's Code tab does not draw the `statusLine` from `settings.json`. To get the same information there, the repository ships a second plugin, **`subagent-statusline-desktop`** (folder [`desktop/`](./desktop)): a Claude Code *mod* (function hooks) that draws a band above the prompt.
+
+```
+my-app [Opus 5.5 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m 32s │ ⚡ 2 · ✓ 7 · ✗ 0 │ 5h: 13% · Week: 4%
+  ↳ Sonnet 5.5 (medium) · Explore · Map the auth module █████░░░░░░░░░░░ 310k/1M · 1m 7s
+```
+
+```
+claude plugin marketplace update claude-subagent-statusline
+claude plugin install subagent-statusline-desktop@claude-subagent-statusline
+```
+
+- **Desktop only**: it draws nothing in the terminal, where the Node statusline already is; both can be installed together.
+- **Project**: the repository's folder name when the session is in one, else the folder's, and `sin carpeta` when the session was opened without a folder.
+- **Rate limits** without the reset time, so the band fits the desktop's width.
+- **Data**: read straight from the engine (context, cost and rate limits from `session.measure`, model and effort from each request, and the agent list), with no scripts or state files. The persistent delegation history stays with the Node plugin.
+- Each sub-agent's context window is an estimate: 200k for Haiku, and the main session's window for the rest.
+
+Mod tests: `claude plugin test desktop`.
+
 ## Updating to the latest version
 
 If you already have the plugin installed and want to pull the most recent release:

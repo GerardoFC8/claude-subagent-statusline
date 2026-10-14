@@ -1,0 +1,7 @@
+{
+  "name": "subagent-statusline-desktop",
+  "version": "0.1.0",
+  "description": "Desktop (Code tab) companion of claude-subagent-statusline: a band above the prompt with project, model, effort, cost, context, elapsed time, sub-agent counters, 5h and weekly usage, and one row per running sub-agent.",
+  "author": { "name": "Gerardo Franco", "url": "https://github.com/GerardoFC8" },
+  "types": "./types/index.d.ts"
+}
