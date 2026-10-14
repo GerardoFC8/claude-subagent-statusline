@@ -17,3 +17,6 @@ dist/
 # No lockfile to keep: package.json declares zero dependencies, so npm only ever
 # writes a lockfile describing this package itself.
 package-lock.json
+
+# Types the engine lays beside the desktop mod each time it loads it.
+desktop/.claude-plugin/types/

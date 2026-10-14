@@ -24,6 +24,25 @@
         "subagents",
         "hooks"
       ]
+    },
+    {
+      "name": "subagent-statusline-desktop",
+      "description": "Claude Desktop (Code tab) mod: a band above the prompt with project, model, effort, cost, context, elapsed time, sub-agent counters, 5h and weekly usage, and one row per running sub-agent.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Gerardo Franco"
+      },
+      "source": "./desktop",
+      "category": "productivity",
+      "homepage": "https://github.com/GerardoFC8/claude-subagent-statusline",
+      "license": "MIT",
+      "keywords": [
+        "claude-code",
+        "claude-desktop",
+        "statusline",
+        "subagents",
+        "mod"
+      ]
     }
   ]
 }
