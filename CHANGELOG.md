@@ -21,6 +21,7 @@ Claude Desktop's Code tab does not draw the `statusLine` command, so this releas
 
 ### Changed
 
+- **`README.md` / `README.en.md`** — the intro points to the desktop plugin and the update section covers it. The Spanish README now uses neutral Spanish (`tú`) instead of Rioplatense `vos` forms.
 - **Version** bumped to `0.16.0` across `plugin.json`, `package.json`, and `marketplace.json`. `subagent-statusline-desktop` starts at `0.1.0`.
 
 ### Updating
