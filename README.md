@@ -4,6 +4,8 @@
 
 Plugin para Claude Code que muestra una statusline en vivo con la carpeta del proyecto, el modelo y effort activos, el costo estimado de la sesión, el uso de la ventana de contexto, los contadores de sub-agentes (Task) en tiempo real, el tiempo transcurrido y los rate limits de 5h y 7d. Mantiene además un historial persistente y consultable de cada delegación entre sesiones. Node.js puro (18 o superior) — funciona en Windows, macOS y Linux.
 
+Para la pestaña Code de Claude Desktop, que no dibuja el `statusLine`, el repositorio incluye un segundo plugin, `subagent-statusline-desktop`, que muestra la misma información en una banda encima del prompt (ver [Claude Desktop](#claude-desktop-pestaña-code)).
+
 ## Vista previa
 
 ```
@@ -21,7 +23,7 @@ my-app [Opus 4.7 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m
 
 ### Cómo se construye cada segmento
 
-**Carpeta del proyecto** (`my-app` en negrita al inicio) — basename de `workspace.current_dir`, con `cwd` como fallback. Si el directorio coincide con tu `$HOME`, se muestra como `~`. Si Claude Code no expone ninguno de los dos campos, el prefijo se omite. Útil para distinguir sesiones cuando tenés varias instancias abiertas en distintos repos.
+**Carpeta del proyecto** (`my-app` en negrita al inicio) — basename de `workspace.current_dir`, con `cwd` como fallback. Si el directorio coincide con tu `$HOME`, se muestra como `~`. Si Claude Code no expone ninguno de los dos campos, el prefijo se omite. Útil para distinguir sesiones cuando tienes varias instancias abiertas en distintos repos.
 
 **Bracket del modelo** (`[Opus 4.7 (high) · $1.42]`) — combina tres datos:
 - *Nombre del modelo*: se obtiene parseando `model.id` (por ejemplo, `claude-opus-4-7` → `Opus 4.7`). Si el campo no está disponible, se cae al fallback `model.display_name` con anotaciones tipo `(1M context)` o `(200K context)` removidas para mantener el bracket compacto.
@@ -62,13 +64,13 @@ El effort heredado solo se muestra si ese archivo fue escrito por **Claude Code 
 
 **Tiempo transcurrido** (`8m 24s`) — desde el `startTime` del task, con el mismo formato que el reloj `⏱` de la statusline principal.
 
-> **Sobre detectar sub-agentes colgados**: la barra te dice cuánto contexto lleva consumido, no si sigue avanzando. Un sub-agente trabado y uno lento se ven igual. La señal práctica es la combinación de un tiempo transcurrido alto con una barra que no se mueve entre refrescos, no un único vistazo a la fila.
+> **Sobre detectar sub-agentes colgados**: la barra te dice cuánto contexto lleva consumido, no si sigue avanzando. Un sub-agente colgado y uno lento se ven igual. La señal práctica es la combinación de un tiempo transcurrido alto con una barra que no se mueve entre refrescos, no un único vistazo a la fila.
 
 > **Nombre del sub-agente** (`Explore`, `sdd-apply`…) — Claude Code manda `local_agent` como tipo de todo sub-agente, un valor interno idéntico en todas las filas, y el nombre que pediste al delegar no viaja en el payload. El plugin lo recupera del archivo de contadores de la sesión que escriben sus propios hooks (`~/.claude/state/delegations-<session_id>.jsonl`). Un sub-agente en background se identifica de forma exacta por su `agent_id`. Uno en foreground no tiene `agent_id` registrado mientras corre, así que se busca una delegación todavía en curso con exactamente la misma descripción: si todas las coincidencias comparten un mismo nombre, se muestra; si hay nombres distintos (o ninguno), la fila va sin nombre en lugar de adivinar. Una delegación que omitió `subagent_type` se muestra como `general-purpose`, que es lo que ejecuta Claude Code. Una delegación que quedó en curso por un crash o una interrupción nunca se cierra, así que las delegaciones en foreground posteriores con la misma descripción pueden ir sin nombre durante el resto de esa sesión, nunca con uno incorrecto. Los hooks corren de forma asíncrona, por lo que el nombre puede faltar en el primer o segundo refresco tras el lanzamiento. Si el payload trae un tipo real que no sea interno, ese gana. Sin archivo de contadores (hooks no instalados, sesión sin `session_id`), la fila simplemente omite el nombre.
 
-**Ancho de la fila** — la fila nunca excede el `columns` que informa Claude Code, y el ancho se mide en columnas renderizadas y no en caracteres, así que una descripción en japonés o con emojis se presupuesta correctamente y el truncado nunca parte un emoji al medio. Cuando el espacio no alcanza, primero se acorta la descripción y después se descartan segmentos por orden de menor valor informativo: la barra, el nombre del sub-agente, el tiempo y por último la cifra de contexto. La barra cae antes que el nombre porque la cifra de contexto que la acompaña ya transmite lo mismo. El modelo nunca se descarta, porque es el dato por el que la fila existe.
+**Ancho de la fila** — la fila nunca excede el `columns` que informa Claude Code, y el ancho se mide en columnas renderizadas y no en caracteres, así que una descripción en japonés o con emojis se presupuesta correctamente y el truncado nunca parte un emoji por la mitad. Cuando el espacio no alcanza, primero se acorta la descripción y después se descartan segmentos por orden de menor valor informativo: la barra, el nombre del sub-agente, el tiempo y por último la cifra de contexto. La barra cae antes que el nombre porque la cifra de contexto que la acompaña ya transmite lo mismo. El modelo nunca se descarta, porque es el dato por el que la fila existe.
 
-El renderizador vive en `scripts/subagent-statusline.js` y se registra automáticamente bajo la clave `subagentStatusLine` de `~/.claude/settings.json`, de forma aditiva: **no toca ni modifica tu `statusLine` existente**. Si ya tenés un `subagentStatusLine` propio, el plugin lo respeta y no lo sobrescribe.
+El renderizador vive en `scripts/subagent-statusline.js` y se registra automáticamente bajo la clave `subagentStatusLine` de `~/.claude/settings.json`, de forma aditiva: **no toca ni modifica tu `statusLine` existente**. Si ya tienes un `subagentStatusLine` propio, el plugin lo respeta y no lo sobrescribe.
 
 ## Instalación
 
@@ -81,7 +83,7 @@ claude plugin install claude-subagent-statusline@claude-subagent-statusline
 
 ## Claude Desktop (pestaña Code)
 
-La pestaña Code de Claude Desktop no dibuja el `statusLine` de `settings.json`. Para tener la misma información ahí, el repositorio trae un segundo plugin, **`subagent-statusline-desktop`** (carpeta [`desktop/`](./desktop)): un *mod* de Claude Code (function hooks) que dibuja una banda encima del prompt.
+La pestaña Code de Claude Desktop no dibuja el `statusLine` de `settings.json`. Para ver la misma información ahí, el repositorio incluye un segundo plugin, **`subagent-statusline-desktop`** (carpeta [`desktop/`](./desktop)): un *mod* de Claude Code (function hooks) que dibuja una banda encima del prompt.
 
 ```
 mi-proyecto [Opus 5.5 (high) · $1.42] ████░░░░░░ 42% │ ⏱ 14m 32s │ ⚡ 2 · ✓ 7 · ✗ 0 │ 5h: 13% · Week: 4%
@@ -93,34 +95,40 @@ claude plugin marketplace update claude-subagent-statusline
 claude plugin install subagent-statusline-desktop@claude-subagent-statusline
 ```
 
-- **Solo en el escritorio**: en la terminal no dibuja nada, porque ahí ya está la statusline de Node; podés tener los dos instalados.
-- **Proyecto**: el nombre de la carpeta del repo si la sesión está en uno, si no el de la carpeta, y `sin carpeta` cuando la sesión se abrió sin carpeta.
-- **Rate limits** sin el tiempo de reset, para que la banda entre en el ancho del escritorio.
-- **Datos**: los lee directo del motor (contexto, costo y rate limits de `session.measure`, modelo y effort de cada request, y la lista de agentes), sin scripts ni archivos de estado. El historial persistente de delegaciones sigue siendo cosa del plugin de Node.
+- **Solo en el escritorio**: en la terminal no dibuja nada, porque ahí ya está la statusline de Node; puedes tener los dos instalados.
+- **Proyecto**: el nombre de la carpeta del repo si la sesión está en uno, si no, el de la carpeta, y `sin carpeta` cuando la sesión se abrió sin carpeta.
+- **Rate limits** sin el tiempo de reset, para que la banda quepa en el ancho del escritorio.
+- **Datos**: los lee directo del motor (contexto, costo y rate limits de `session.measure`, modelo y effort de cada request, y la lista de agentes), sin scripts ni archivos de estado. El historial persistente de delegaciones sigue a cargo del plugin de Node.
 - La ventana de contexto de cada sub-agente es una estimación: 200k para Haiku y, para el resto, la misma ventana de la sesión principal.
 
 Tests del mod: `claude plugin test desktop`.
 
 ## Actualizar a la última versión
 
-Si ya tenés el plugin instalado y querés traer la versión más reciente:
+Si ya tienes el plugin instalado y quieres obtener la versión más reciente:
 
 ```
 claude plugin update claude-subagent-statusline@claude-subagent-statusline
+```
+
+Si también instalaste el plugin de escritorio, actualízalo igual:
+
+```
+claude plugin update subagent-statusline-desktop@claude-subagent-statusline
 ```
 
 **Reinicia Claude Code** después de actualizar para que los hooks se recarguen. La autoconfiguración del statusLine se ejecuta en cada `SessionStart` y reescribe automáticamente la ruta absoluta del script para que apunte a la nueva versión — no hace falta tocar `settings.json` a mano.
 
 ### Auto-update (opcional)
 
-Si preferís que las actualizaciones se apliquen solas en cada inicio de Claude Code:
+Si prefieres que las actualizaciones se apliquen solas en cada inicio de Claude Code:
 
-1. Corré `/plugin` dentro de Claude Code
-2. Cambiá a la pestaña **Marketplaces**
-3. Seleccioná `claude-subagent-statusline`
-4. Pulsá **Enable auto-update**
+1. Ejecuta `/plugin` dentro de Claude Code
+2. Cambia a la pestaña **Marketplaces**
+3. Selecciona `claude-subagent-statusline`
+4. Pulsa **Enable auto-update**
 
-Las marketplaces de terceros tienen auto-update desactivado por defecto — basta con prenderlo una vez. Después es transparente: cada vez que inicies Claude Code se actualiza sola si hay nueva versión.
+Las marketplaces de terceros tienen auto-update desactivado por defecto — basta con activarlo una vez. Después es transparente: cada vez que inicies Claude Code se actualiza sola si hay nueva versión.
 
 ## Configuración
 
@@ -134,7 +142,7 @@ Para desactivar la autoconfiguración, define la variable de entorno `CSL_NO_AUT
 
 ### Configuración manual (opcional)
 
-Si prefieres configurarlo a mano, añade esto a `~/.claude/settings.json` reemplazando `<RUTA>` con la ruta de instalación real del plugin (la podés ver en `~/.claude/plugins/installed_plugins.json`, campo `installPath`):
+Si prefieres configurarlo a mano, añade esto a `~/.claude/settings.json` reemplazando `<RUTA>` con la ruta de instalación real del plugin (puedes verla en `~/.claude/plugins/installed_plugins.json`, campo `installPath`):
 
 ```json
 "statusLine": {
@@ -146,9 +154,9 @@ Si prefieres configurarlo a mano, añade esto a `~/.claude/settings.json` reempl
 
 > **Importante**: usa la ruta absoluta. La variable `${CLAUDE_PLUGIN_ROOT}` solo se expande dentro del `hooks.json` del plugin — Claude Code no la sustituye en `statusLine.command` del `settings.json` del usuario. Por eso la autoconfiguración escribe la ruta absoluta y la actualiza en cada upgrade del plugin.
 
-> **`refreshInterval`** indica cada cuántos segundos Claude Code vuelve a ejecutar el comando aunque no haya mensajes nuevos. Mantiene vivo el contador de la ventana de 5h y el reloj de tiempo transcurrido cuando estás idle. La autoconfiguración usa `30` por defecto; si ya tenés tu propio valor el plugin lo respeta.
+> **`refreshInterval`** indica cada cuántos segundos Claude Code vuelve a ejecutar el comando aunque no haya mensajes nuevos. Mantiene vivo el contador de la ventana de 5h y el reloj de tiempo transcurrido cuando la sesión está inactiva. La autoconfiguración usa `30` por defecto; si ya tienes tu propio valor, el plugin lo respeta.
 
-Para las [filas por sub-agente](#filas-por-sub-agente-modelo-por-sub-agente) (Claude Code v2.1.205+), añadí además la clave `subagentStatusLine` apuntando al segundo script:
+Para las [filas por sub-agente](#filas-por-sub-agente-modelo-por-sub-agente) (Claude Code v2.1.205+), añade además la clave `subagentStatusLine` apuntando al segundo script:
 
 ```json
 "subagentStatusLine": {

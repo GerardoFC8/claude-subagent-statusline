@@ -4,6 +4,8 @@
 
 A Claude Code plugin that renders a live statusline showing your project folder, the active model and effort, estimated session cost, context window usage, real-time sub-agent (Task) counters, session elapsed time, and the 5h/7d rate-limit windows. Also persists a searchable history of every delegation across sessions. Pure Node.js (18+) — runs on Windows, macOS, and Linux.
 
+For Claude Desktop's Code tab, which does not draw the `statusLine`, the repository ships a second plugin, `subagent-statusline-desktop`, that shows the same information in a band above the prompt (see [Claude Desktop](#claude-desktop-code-tab)).
+
 ## Preview
 
 ```
@@ -107,6 +109,12 @@ If you already have the plugin installed and want to pull the most recent releas
 
 ```
 claude plugin update claude-subagent-statusline@claude-subagent-statusline
+```
+
+If you also installed the desktop plugin, update it the same way:
+
+```
+claude plugin update subagent-statusline-desktop@claude-subagent-statusline
 ```
 
 **Restart Claude Code** after updating so the hooks get reloaded. The statusLine auto-configuration runs on every `SessionStart` and rewrites the absolute path of the script automatically so it points to the newly installed version — you do not need to touch `settings.json` by hand.
