@@ -7,11 +7,30 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.16.0] — 2026-10-14
+
+Claude Desktop's Code tab does not draw the `statusLine` command, so this release adds a second plugin to the marketplace that draws the same information there. The Node statusline itself is unchanged.
 
 ### Added
 
 - **`subagent-statusline-desktop`** — a second plugin in this marketplace, in `desktop/`: a Claude Code mod (function hooks) that draws the statusline as a band above the prompt in Claude Desktop's Code tab, where the `statusLine` command is not drawn. It shows the project (repository folder, else the folder, else `sin carpeta`), model and effort, session cost, context bar, elapsed time, `⚡ ✓ ✗` sub-agent counters, 5h and weekly usage (without reset times), and one row per running sub-agent with its model, effort, name, description, context bar, tokens and elapsed time. It draws only on the desktop surface, so the Node statusline keeps the terminal. Install with `claude plugin install subagent-statusline-desktop@claude-subagent-statusline`.
+
+### Fixed
+
+- **Session effort tests on Ubuntu and macOS** in `tests/history.test.js` and `tests/statusline.test.js` set a whole-second mtime. A millisecond timestamp set with `utimesSync` could read back as `...115.999` instead of `...116`, so the strict `mtimeMs` comparison failed and CI had been red on those runners since `0.14.0`.
+
+### Changed
+
+- **Version** bumped to `0.16.0` across `plugin.json`, `package.json`, and `marketplace.json`. `subagent-statusline-desktop` starts at `0.1.0`.
+
+### Updating
+
+```
+claude plugin marketplace update claude-subagent-statusline
+claude plugin install subagent-statusline-desktop@claude-subagent-statusline
+```
+
+Restart Claude Code to apply.
 
 ---
 
