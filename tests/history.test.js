@@ -243,7 +243,8 @@ test('history: writeSessionEffort writes only when the content changes', () => {
     const file = path.join(home, '.claude', 'state', 'session-effort-S1.json');
     assert.strictEqual(lib.writeSessionEffort('S1', 'high', '2.1.285'), true);
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { effort: 'high', version: '2.1.285' });
-    const past = new Date(Date.now() - 60000);
+    // whole seconds: a millisecond mtime does not round-trip exactly on every filesystem
+    const past = new Date(Math.floor(Date.now() / 1000) * 1000 - 60000);
     fs.utimesSync(file, past, past);
     assert.strictEqual(lib.writeSessionEffort('S1', 'high', '2.1.285'), false);
     assert.strictEqual(fs.statSync(file).mtimeMs, past.getTime());
