@@ -985,7 +985,8 @@ test('statusline: does not rewrite the session effort file when unchanged', () =
   try {
     const file = sessionEffortFile(home, 'EFF2');
     fs.writeFileSync(file, JSON.stringify({ effort: 'high', version: '2.1.285' }));
-    const past = new Date(Date.now() - 60000);
+    // whole seconds: a millisecond mtime does not round-trip exactly on every filesystem
+    const past = new Date(Math.floor(Date.now() / 1000) * 1000 - 60000);
     fs.utimesSync(file, past, past);
     const payload = JSON.stringify({
       session_id: 'EFF2', version: '2.1.285', effort: { level: 'high' },
